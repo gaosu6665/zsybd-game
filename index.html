@@ -1,0 +1,2399 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<!-- BUILD 1018-1710 -->
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<meta name="theme-color" content="#0a0807">
+<title>治世不一道 · 引擎原型 v0.1</title>
+<style>
+:root{--ink:#0a0807;--paper:#e6d9c1;--dim:#7d6f5c;--red:#9b2c2c;--wood:#bb966c;--line:#2a231b}
+*{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
+html,body{margin:0;height:100%;background:var(--ink);color:var(--paper);
+  font-family:"Kaiti SC","STKaiti","KaiTi","Songti SC","SimSun",serif;overflow:hidden}
+#app{position:fixed;inset:0;display:flex;flex-direction:column}
+
+/* 顶栏 */
+#top{flex:0 0 auto;display:flex;align-items:center;justify-content:space-between;
+  padding:10px 16px;border-bottom:1px solid var(--line);font-size:12px;color:var(--dim);
+  letter-spacing:.16em;background:rgba(10,8,7,.9);z-index:5}
+#top .t{color:#c8b79a;letter-spacing:.3em;font-size:13px}
+.badge{display:inline-block;margin-left:12px;padding:1px 8px;border-radius:10px;
+  font-size:10px;letter-spacing:.1em;vertical-align:middle}
+.badge.on{color:#8fbf90;border:1px solid #2f4a30;background:rgba(60,120,60,.10)}
+.badge.off{color:#a87575;border:1px solid #4a2f2f;background:rgba(120,60,60,.10)}
+#top .r{display:flex;gap:8px}
+#top button{background:none;border:1px solid #3a3228;color:#8a7a62;padding:4px 10px;
+  border-radius:3px;font-family:inherit;font-size:11px;cursor:pointer}
+#top button:hover{color:#d8c8ab;border-color:#6a5c4a}
+
+/* 主体：朝堂 / 村口背景 */
+#hs-stage{position:relative;flex:1 1 auto;overflow:hidden;display:flex;flex-direction:column}
+#bg{position:fixed;inset:0;z-index:0;pointer-events:none;background-size:cover;background-position:70% center;
+  background-repeat:no-repeat;opacity:0;transition:opacity 1.1s ease,transform 1.1s ease;transform:scale(1.03);}
+#bg.loaded{opacity:1;transform:none}
+
+#lightbeam{position:absolute;inset:0;z-index:1;pointer-events:none;mix-blend-mode:screen;opacity:0;transition:opacity 1.2s}
+#lightbeam.on{opacity:1}
+#lightbeam{background:
+  radial-gradient(120% 90% at 50% 118%,rgba(255,214,150,.42) 0%,rgba(255,190,120,.20) 26%,rgba(255,170,100,.07) 48%,transparent 70%),
+  linear-gradient(180deg,transparent 55%,rgba(0,0,0,.35) 100%)}
+#scrim{position:absolute;inset:0;z-index:1;pointer-events:none;
+  background:linear-gradient(90deg,rgba(8,6,5,.90) 0%,rgba(8,6,5,.74) 34%,rgba(8,6,5,.34) 62%,rgba(8,6,5,.04) 82%,rgba(8,6,5,.22) 100%)}
+@media (min-width:900px){
+  .msg{margin-left:7vw;margin-right:auto;max-width:640px}
+  .msg.player{margin-left:auto;margin-right:7vw}
+}
+@media (max-width:700px){
+  #scrim{background:linear-gradient(180deg,rgba(8,6,5,.86) 0%,rgba(8,6,5,.70) 40%,rgba(8,6,5,.78) 75%,rgba(8,6,5,.92) 100%)}
+}
+
+#bg::after{content:"";position:absolute;inset:0;background:linear-gradient(180deg,rgba(8,6,5,.62) 0%,rgba(8,6,5,.22) 26%,rgba(8,6,5,.30) 62%,rgba(8,6,5,.82) 100%)}
+#bg.court{background-image:url("素材/court-main.png")}
+#bg.court-side{background-image:url("素材/court-side.png")}
+#bg.lamp{background-image:url("素材/lamp-slips.png")}
+#bg.lamp.loaded{opacity:.30;background-position:center 42%}
+#bg.battle{background-image:url("素材/battle.jpg");background-position:center 45%}
+#bg.slips{background-image:url("素材/slips.jpg");background-position:center 55%;opacity:.85}
+#bg.hall{background-image:url("素材/hall.jpg");background-position:center 55%}
+#bg.door{background-image:url("素材/door.jpg");background-position:center 40%}
+#bg.village{background-image:url("素材/village.jpg");background-position:60% center}
+#bg.field{background-image:url("素材/field.jpg");background-position:center 40%}
+#bg.epilogue{background:#000}
+
+
+/* ══ galgame 层：立绘 ══ */
+#actors{position:absolute;inset:0;z-index:2;pointer-events:none}
+.actor{position:absolute;bottom:0;height:76%;width:28%;opacity:0;
+  transition:opacity .6s ease,transform .6s ease}
+.actor.left{left:4%;transform:translateY(14px)}
+.actor.right{right:4%;transform:translateY(14px)}
+.actor.pleft{left:-12%;bottom:0;height:88%;width:30%;opacity:0;transition:opacity .6s}
+.actor.pleft.on{opacity:1}
+.actor.on{opacity:1;transform:none}
+.actor.on.dim{opacity:.55}
+.actor.backlit .spr{filter:brightness(.52) contrast(1.15) saturate(.9)}
+.actor img{height:100%;width:auto;max-width:100%;object-fit:contain;
+  mix-blend-mode:screen;filter:contrast(1.05) brightness(.98);
+  -webkit-mask-image:radial-gradient(ellipse 70% 62% at 50% 55%,#000 62%,transparent 92%)}
+/* 没有立绘时的占位剪影 */
+.actor .ph{display:none;position:absolute;bottom:0;left:50%;transform:translateX(-50%);
+  width:62%;height:86%;border-radius:50% 50% 12% 12%/22% 22% 8% 8%;
+  background:radial-gradient(ellipse at 50% 18%,rgba(200,168,120,.10),rgba(20,14,10,.55) 62%,transparent 78%);
+  filter:blur(2px)}
+.actor .spr{display:none;height:100%;width:auto;max-width:100%;object-fit:contain;object-position:right bottom;
+  mix-blend-mode:normal;filter:contrast(1.06);
+  -webkit-mask-image:radial-gradient(ellipse 76% 72% at 50% 52%,#000 56%,transparent 95%);
+  mask-image:radial-gradient(ellipse 76% 72% at 50% 52%,#000 56%,transparent 95%)}
+.actor.hasImg .spr{display:block}
+.actor .spr.blend{mix-blend-mode:screen;-webkit-mask-image:none;mask-image:none}
+.actor.hasImg .ph{display:none}
+.actor .nm{display:none;position:absolute;bottom:6px;left:50%;transform:translateX(-50%);
+  font-size:11px;letter-spacing:.3em;color:#6a5c4a;white-space:nowrap}
+.actor.hasImg .ph{display:none}
+
+/* ══ galgame 层：底部对话框 ══ */
+#dialogPanel{position:relative;z-index:6;flex:0 0 auto;display:flex;flex-direction:column;
+  justify-content:flex-end;height:25vh;min-height:168px;max-height:270px;
+  padding:0 5vw 16px;cursor:pointer;
+  background:linear-gradient(180deg,rgba(6,5,4,.10) 0%,rgba(6,5,4,.55) 22%,rgba(6,5,4,.78) 62%,rgba(6,5,4,.88) 100%);
+  -webkit-backdrop-filter:blur(9px) saturate(.95);backdrop-filter:blur(9px) saturate(.95)}
+#dname{position:static;font-size:15px;letter-spacing:.34em;color:#e0cfae;margin:0 0 2px;
+  text-shadow:0 2px 10px #000,0 0 2px #000}
+#dname:empty{display:none}
+#dgloss{position:relative;margin-top:9px;font-size:12.5px;line-height:1.7;
+  color:#a2937c;text-shadow:0 1px 8px #000;letter-spacing:.02em}
+#dnext{position:absolute;left:50%;transform:translateX(-50%);bottom:4px;color:#e2d4b6;font-size:26px;
+  line-height:1;opacity:0;transition:opacity .3s;cursor:pointer;z-index:8;
+  text-shadow:0 2px 10px #000}
+#dnext.on{opacity:1;animation:nudge 1.15s ease-in-out infinite}
+@keyframes nudge{0%,100%{transform:translateX(-50%) translateY(0);opacity:.65}
+  50%{transform:translateX(-50%) translateY(4px);opacity:1}}
+@keyframes blink{0%,100%{opacity:.28}50%{opacity:1}}
+#dock.hide{display:none}
+#dialogPanel.bare{opacity:0;pointer-events:none}
+#dialogPanel{transition:opacity .35s}
+#dctrl{position:absolute;right:3vw;bottom:6px;display:flex;gap:14px}
+#dctrl button{background:none;border:0;color:#8a7a62;font-family:inherit;font-size:11.5px;
+  letter-spacing:.16em;cursor:pointer;padding:2px 3px}
+#dctrl button:hover{color:#d8c8ab}
+#dctrl button.on{color:#e0cfae}
+
+/* 对话区 */
+.msg{margin:0 auto 16px;max-width:720px;line-height:1.95;font-size:16px;
+  animation:fade .5s ease both}
+@keyframes fade{from{opacity:0;transform:translateY(6px)}to{opacity:1;transform:none}}
+.msg .who{font-size:11px;color:#6a5c4a;letter-spacing:.24em;margin-bottom:5px}
+.msg.npc .body{color:#e4d8c2;text-shadow:0 1px 3px rgba(0,0,0,.95),0 0 18px rgba(0,0,0,.8)}
+.msg.player{text-align:right}
+.msg.player .body{color:#a8bfa2;display:inline-block;text-align:left;max-width:86%;text-shadow:0 1px 3px rgba(0,0,0,.95)}
+.msg.player .who{text-align:right;color:#4f6049}
+.msg .gloss{display:block;margin-top:7px;font-size:12.5px;color:#9a8a72;letter-spacing:.02em;text-shadow:0 1px 3px rgba(0,0,0,.95)}
+.msg.system{margin:22px auto;text-align:center;color:#6a5c4a;font-size:13px;letter-spacing:.2em}
+.msg.system .line{display:inline-block;padding:0 14px}
+
+/* 输入区 */
+#dock{position:relative;z-index:7;flex:0 0 auto;border-top:1px solid var(--line);background:rgba(10,8,7,.96);
+  padding:12px 16px calc(12px + env(safe-area-inset-bottom))}
+#opts{display:flex;flex-wrap:wrap;gap:8px;max-width:760px;margin:0 auto 10px}
+#opts button{background:none;border:1px solid #3a3228;color:#b9a888;padding:8px 13px;
+  border-radius:4px;font-family:inherit;font-size:13.5px;cursor:pointer;text-align:left;flex:0 1 auto}
+#opts button:hover{border-color:#8a7a62;color:#e6d9c1;background:rgba(187,150,108,.07)}
+#opts button.silent{border-color:#4a2f2f;color:#a87575}
+#inrow{display:flex;gap:10px;max-width:760px;margin:0 auto}
+#say{flex:1;min-height:52px;max-height:120px;resize:none;padding:12px 14px;border-radius:6px;
+  border:1px solid #3a3228;background:#120e0a;color:var(--paper);font-family:inherit;
+  font-size:15.5px;line-height:1.6}
+#say:focus{outline:none;border-color:#8a7a62}
+#send{flex:0 0 auto;padding:0 22px;border-radius:6px;border:1px solid #6a5c4a;
+  background:#1a1510;color:#d8c8ab;font-family:inherit;font-size:15px;cursor:pointer}
+#send:hover{background:#241c14}
+#send:disabled{opacity:.4;cursor:not-allowed}
+#hint{max-width:760px;margin:8px auto 0;font-size:11.5px;color:#54493a;letter-spacing:.08em}
+
+/* 调试面板 */
+#dbg{position:fixed;right:0;top:0;bottom:0;width:300px;background:#0d0a08;border-left:1px solid var(--line);
+  transform:translateX(100%);transition:transform .3s;z-index:20;padding:14px;overflow:auto;
+  font:11.5px/1.7 Consolas,monospace;color:#8a7a62}
+#dbg.on{transform:none}
+#dbg h4{margin:0 0 8px;font:600 11px/1.4 Consolas;color:#c8b79a;letter-spacing:.12em}
+#dbg .kv{display:flex;justify-content:space-between;border-bottom:1px dashed #241c14;padding:3px 0}
+#dbg .log{white-space:pre-wrap;word-break:break-all;color:#6a5c4a;max-height:46vh;overflow:auto;margin-top:8px}
+#dbg button{width:100%;margin-top:8px;background:none;border:1px solid #3a3228;color:#b9a888;
+  padding:6px;border-radius:3px;font-family:inherit;font-size:11px;cursor:pointer}
+
+/* 开始页 */
+#start{position:fixed;inset:0;background:#080605;display:flex;flex-direction:column;
+  align-items:center;justify-content:center;z-index:50;text-align:center;padding:24px;transition:opacity .8s}
+#start.gone{opacity:0;pointer-events:none}
+#start h1{font-size:clamp(26px,5vw,44px);letter-spacing:.36em;margin:0 0 14px;color:#e9dcc3;
+  text-shadow:0 0 30px rgba(200,168,120,.16)}
+#start .sub{font-size:12.5px;letter-spacing:.34em;color:var(--dim);margin-bottom:34px}
+#start .note{max-width:560px;font-size:12.5px;line-height:2.1;color:#7a6c58;margin-bottom:30px;
+  border-top:1px solid #241c14;border-bottom:1px solid #241c14;padding:16px 0}
+#start .go{border:1px solid #6a5c4a;background:none;color:#d8c8ab;padding:12px 40px;
+  border-radius:3px;font-family:inherit;font-size:14px;letter-spacing:.32em;cursor:pointer}
+#start .go:hover{background:rgba(187,150,108,.08);border-color:#a08a66}
+#start .tip{margin-top:18px;font-size:11px;color:#4a4034;letter-spacing:.12em}
+#prologue{position:fixed;inset:0;background:#000;display:none;place-items:center;z-index:55;cursor:pointer;
+  text-align:center;transition:opacity 1s;opacity:1}
+#prologue.on{display:grid}
+#prologue.out{opacity:0}
+.plines{display:flex;flex-direction:column;gap:18px}
+.pline{font-size:15px;letter-spacing:.42em;color:#cfc3ab;opacity:0;
+  transform:translateY(6px);transition:opacity 1.1s,transform 1.1s}
+.pline.show{opacity:1;transform:none}
+#endbox{position:fixed;inset:0;background:#000;display:none;place-items:center;z-index:60;
+  text-align:center;padding:30px}
+#endbox.on{display:grid}
+
+/* 黑夫 · 说明卡 */
+#letterNote{position:fixed;inset:0;background:#080706;display:none;z-index:62;
+  padding:6vh 8vw;overflow-y:auto;cursor:pointer;
+  align-items:center;justify-content:center}
+#letterNote.on{display:flex}
+#letterNote .inner{max-width:720px;margin:0 auto}
+#letterNote .yr{font-size:13px;letter-spacing:.34em;color:#b7a688;margin-bottom:30px}
+#letterNote p{font-size:14.5px;line-height:2.0;color:#cbbfa6;margin:0 0 18px;letter-spacing:.04em}
+#letterNote p.key{color:#e6d9c1}
+#letterNote .small{font-size:11px;line-height:1.9;color:#6f6353;margin-top:26px}
+#letterNote .hint{position:fixed;left:0;right:0;bottom:4vh;text-align:center;
+  font-size:11px;letter-spacing:.28em;color:#6f6353}
+#endbox .t{font-size:15px;letter-spacing:.4em;color:#cfc3ab}
+#endbox .s{margin-top:22px;font-size:12px;letter-spacing:.24em;color:#5f584c}
+#endbox button{margin-top:34px;background:none;border:1px solid #3a3228;color:#8a7a62;
+  padding:10px 26px;border-radius:3px;font-family:inherit;letter-spacing:.2em;cursor:pointer}
+
+/* ══ 固定演出：居中字幕（不用对话框） ══ */
+#cine{position:fixed;inset:0;z-index:45;display:none;cursor:pointer;flex-direction:column;align-items:center;
+  justify-content:center;text-align:center;padding:0 8vw;
+  background:radial-gradient(ellipse at 50% 48%,rgba(0,0,0,.58) 0%,rgba(0,0,0,.30) 46%,transparent 74%)}
+#cine.on{display:flex}
+#cine .ct{max-width:860px;font-size:clamp(19px,2.5vw,27px);line-height:1.9;color:#f4ecd9;
+  letter-spacing:.14em;text-shadow:0 3px 24px #000,0 0 6px #000;
+  opacity:0;transform:translateY(8px);transition:opacity .7s,transform .7s}
+#cine .ct.show{opacity:1;transform:none}
+#cine .cg{margin-top:16px;max-width:760px;font-size:14px;line-height:1.85;color:#b9a888;
+  letter-spacing:.04em;text-shadow:0 2px 14px #000;opacity:0;transition:opacity .7s}
+#cine .cg.show{opacity:1}
+#cine .cbtns{display:none;gap:18px;margin-top:40px;pointer-events:auto}
+#cine .cbtns.on{display:flex}
+#cine .cbtns button{background:rgba(18,14,10,.74);border:1px solid #6a5c4a;color:#e6d9c1;
+  padding:13px 26px;border-radius:4px;font-family:inherit;font-size:15px;letter-spacing:.1em;cursor:pointer}
+#cine .cbtns button:hover{border-color:#a08a66;background:rgba(40,32,22,.88)}
+#fade{position:fixed;inset:0;z-index:44;background:#000;opacity:0;pointer-events:none;
+  transition:opacity .8s}
+#fade.on{opacity:1}
+/* 过场/字幕期间：底部整块隐藏，绝不闪 */
+#app.cine-mode #dialogPanel,
+#app.cine-mode #dock,
+#app.cine-mode #actors{display:none!important}
+/* 转场黑屏字幕卡 */
+#chap{position:fixed;inset:0;z-index:46;background:#000;display:grid;place-items:center;
+  opacity:0;pointer-events:none;transition:opacity .85s}
+#chap.on{opacity:1;pointer-events:auto}
+#chap .ct{font-size:clamp(16px,1.9vw,22px);letter-spacing:.42em;color:#cfc3ab;text-align:center}
+#chap .cs{margin-top:22px;font-size:12px;letter-spacing:.28em;color:#5f584c;text-align:center}
+/* 点击继续：箭头指同心圆，上下浮动 */
+#tapHint{position:fixed;left:50%;bottom:5.2vh;transform:translateX(-50%);
+  display:none;flex-direction:column;align-items:center;gap:10px;z-index:56;pointer-events:none;
+  animation:tapFloat 1.9s ease-in-out infinite}
+#tapHint.on{display:flex}
+@keyframes tapFloat{0%,100%{transform:translateX(-50%) translateY(0);opacity:.55}
+  50%{transform:translateX(-50%) translateY(-7px);opacity:1}}
+#tapHint .arr{width:0;height:0;border-left:9px solid transparent;border-right:9px solid transparent;
+  border-top:13px solid #c9b795;filter:drop-shadow(0 2px 6px #000)}
+#tapHint .rings{position:relative;width:34px;height:34px;display:grid;place-items:center}
+#tapHint .rings i:nth-child(1){width:32px;height:32px;border:1.5px solid rgba(201,183,149,.85);
+  border-radius:50%;box-shadow:0 0 14px rgba(201,183,149,.25)}
+#tapHint .rings i:nth-child(2){position:absolute;width:9px;height:9px;border-radius:50%;
+  background:#d8c8ab;box-shadow:0 0 10px rgba(216,200,171,.6)}
+#tapHint .lbl{margin-top:2px;font-size:12.5px;letter-spacing:.3em;color:#cbb894;text-shadow:0 2px 8px #000}
+
+/* 左侧半屏浮字（商鞅回头那一段用） */
+#side{position:fixed;left:6vw;top:50%;transform:translateY(-50%);z-index:45;display:none;
+  max-width:42vw;text-align:left}
+#side.on{display:block}
+#side .st{font-size:clamp(19px,2.3vw,28px);line-height:1.85;letter-spacing:.12em;color:#f4ecd9;
+  text-shadow:0 3px 20px #000,0 0 6px #000;opacity:0;transform:translateX(-10px);
+  transition:opacity .9s,transform .9s}
+#side .st.show{opacity:1;transform:none}
+#side .sg{margin-top:16px;font-size:14px;line-height:1.85;color:#b9a888;letter-spacing:.04em;
+  text-shadow:0 2px 14px #000;opacity:0;transition:opacity .9s}
+#side .sg.show{opacity:1}
+
+@media (min-width:900px){
+  .msg{margin-left:7vw;margin-right:auto;max-width:640px}
+  .msg.player{margin-left:auto;margin-right:7vw}
+}
+@media (max-width:700px){
+  .msg{font-size:15px}
+  #say{font-size:16px}          /* 防 iOS 放大 */
+  #top .t{font-size:12px;letter-spacing:.2em}
+  #dbg{width:100%}
+  #opts button{font-size:13px;padding:9px 12px}
+}
+
+
+/* 思考中：右侧三连点 */
+#dthinking{position:absolute;left:50%;transform:translateX(-50%);bottom:26px;display:none;gap:8px;align-items:flex-end;z-index:8}
+#dthinking.on{display:flex}
+#dthinking i{width:9px;height:9px;border-radius:50%;background:#d8c8ab;opacity:.25;
+  animation:thinkPulse 1.15s infinite ease-in-out}
+#dthinking i:nth-child(2){animation-delay:.16s}
+#dthinking i:nth-child(3){animation-delay:.32s}
+@keyframes thinkPulse{0%,70%,100%{opacity:.22;transform:translateY(0)}35%{opacity:.95;transform:translateY(-3px)}}
+
+
+/* ══════ 首页：户版展开 ══════ */
+/* 写名之后：右侧浮现 */
+#hs-afterward{position:absolute;right:5vw;top:50%;transform:translateY(-50%) translateX(14px);
+  writing-mode:vertical-rl;text-orientation:mixed;font-size:clamp(22px,2.5vw,38px);
+  line-height:2.05;letter-spacing:.24em;color:#c4b294;opacity:0;pointer-events:none;z-index:80;
+  transition:opacity 1.1s ease .2s,transform 1.1s ease .2s;text-shadow:0 0 16px rgba(0,0,0,.6)}
+#hs-afterward.show{opacity:1;transform:translateY(-50%) translateX(0)}
+#hs-afterward em{font-style:normal;color:#9a8a70;font-size:.88em}
+
+#hs-home{position:fixed;inset:0;z-index:70;background:#0a0807;overflow:hidden;font-family:"LiSu","隶书","STKaiti","KaiTi","Songti SC",serif;color:#e6d9c1;user-select:none}
+
+:root{--hsink:#0a0807;--hspaper:#e6d9c1;--hsred:#9b2c2c}
+*{box-sizing:border-box}
+
+#hs-stage{position:fixed;inset:0;display:grid;place-items:center;transition:opacity .8s}
+#hs-stage.gone{opacity:0;pointer-events:none}
+
+#hs-titleWrap{position:absolute;top:6.5vh;left:0;right:0;text-align:center;pointer-events:none;z-index:5}
+#hs-title{font-size:clamp(30px,5.4vw,60px);letter-spacing:.26em;color:#efe2c6;
+  text-shadow:0 0 22px rgba(200,168,120,.16)}
+#hs-sub{margin-top:12px;font-size:clamp(12px,1.5vw,17px);letter-spacing:.34em;color:#7d6f5c}
+
+/* 展开的简册 */
+#hs-rail{position:absolute;left:0;right:0;top:clamp(120px,19vh,190px);bottom:9vh;display:flex;align-items:center;overflow:hidden}
+#hs-scroll{display:flex;gap:14px;align-items:center;padding:0;margin-left:5vw;
+  transform:translateX(46vw);transition:transform 2.4s cubic-bezier(.7,0,.25,1)}
+#hs-scroll.open{transform:translateX(0)}
+#hs-edge{position:absolute;right:0;top:16vh;bottom:16vh;width:13px;border-radius:2px 0 0 2px;
+  background:repeating-linear-gradient(91deg,#bb966c 0 3px,#c6a277 3px 7px,#b08a60 7px 12px);
+  box-shadow:-6px 0 18px rgba(0,0,0,.55),inset 0 0 18px rgba(58,34,14,.5);
+  transition:opacity .6s,transform .6s;z-index:3}
+#hs-edge.gone{opacity:0;transform:translateX(18px)}
+
+.slip{position:relative;flex:0 0 auto;width:clamp(92px,9.2vw,132px);
+  height:clamp(340px,56vh,520px);border-radius:2px;
+  background:
+    repeating-linear-gradient(89deg,rgba(255,255,255,.045) 0 1px,rgba(0,0,0,.045) 1px 4px),
+    repeating-linear-gradient(91deg,#bb966c 0 3px,#c6a277 3px 7px,#b08a60 7px 12px);
+  box-shadow:inset 0 0 34px rgba(58,34,14,.55),0 18px 44px rgba(0,0,0,.6);
+  opacity:0;transform:translateY(14px) rotateZ(.6deg);
+  transition:opacity .5s,transform .5s}
+.slip::before{content:"";position:absolute;inset:0;opacity:.4;mix-blend-mode:multiply;
+  background-image:url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='100' height='100'><filter id='n'><feTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='3'/><feColorMatrix type='saturate' values='0'/></filter><rect width='100' height='100' filter='url(%23n)' opacity='0.4'/></svg>")}
+.slip.show{opacity:1;transform:translateY(0) rotateZ(0)}
+.slip:nth-child(2n){transform-origin:top;margin-top:12px}
+.slip:nth-child(3n){margin-top:-8px}
+
+.slipTxt{position:absolute;inset:16px 11px;writing-mode:vertical-rl;text-orientation:upright;
+  font-size:clamp(12px,1.35vw,17px);line-height:1.9;color:#3a2a1a;letter-spacing:.1em;
+  text-shadow:0 1px 0 rgba(255,255,255,.16);opacity:.75}
+.slipNo{position:absolute;left:50%;bottom:-26px;transform:translateX(-50%);
+  font-size:10px;color:#6a5c4a;letter-spacing:.16em}
+
+/* 编绳（跟着简册一起动） */
+#hs-scroll{position:relative}
+#hs-cords{position:absolute;top:0;bottom:0;pointer-events:none;z-index:4;opacity:0;transition:opacity .8s}
+#hs-cords i{position:absolute;left:0;right:0;height:3px;background:linear-gradient(90deg,rgba(120,96,64,.18),rgba(120,96,64,.62),rgba(120,96,64,.18));
+  box-shadow:0 1px 0 rgba(0,0,0,.5),0 -1px 0 rgba(255,255,255,.05)}
+#hs-cords i:nth-child(1){top:30%} #hs-cords i:nth-child(2){top:74%}
+#hs-scroll.open #hs-cords{opacity:1}
+
+/* 落名（最后一枚） */
+#hs-last{cursor:text}
+#hs-slot{position:absolute;inset:12px 10px;writing-mode:vertical-rl;text-orientation:upright;
+  outline:none;display:flex;align-items:center;justify-content:center;
+  border:1px dashed rgba(58,40,22,.75);border-radius:3px;background:rgba(255,246,225,.16);
+  color:#1b1209;font-weight:700;font-size:clamp(20px,2.6vw,30px);letter-spacing:.14em;
+  text-shadow:0 1px 0 rgba(255,255,255,.18);transition:all .3s}
+#hs-slot:empty::before{content:"在此写下名字";font-size:13px;color:#2e1c0e;opacity:.9;font-weight:700;letter-spacing:.2em}
+#hs-slot:focus{border-color:rgba(155,44,44,.7);background:rgba(255,255,255,.05)}
+#hs-slot.written{border-color:transparent;font-size:clamp(22px,3vw,32px);color:#1b1209;
+  animation:ink .95s ease-out both}
+@keyframes ink{0%{filter:blur(7px);opacity:0}55%{filter:blur(2px);opacity:.85}100%{filter:blur(0);opacity:1}}
+
+#hs-tip{position:absolute;bottom:8vh;left:0;right:0;text-align:center;font-size:12px;
+  letter-spacing:.24em;color:#6f6250;transition:opacity .4s;z-index:6}
+#hs-tip b{color:#a08a66;font-weight:400}
+#hs-unroll{position:absolute;bottom:16vh;left:50%;transform:translateX(-50%);
+  background:none;border:1px solid #4a4034;color:#a08a66;padding:9px 26px;border-radius:3px;
+  font-family:inherit;font-size:13px;letter-spacing:.3em;cursor:pointer;z-index:7;transition:opacity .4s}
+#hs-unroll:hover{color:#d8c8ab;border-color:#8a7a62}
+#hs-unroll.gone{opacity:0;pointer-events:none}
+
+/* 关于 & 序章 & 切换器 */
+#hs-about{position:fixed;right:18px;bottom:14px;font-size:11px;letter-spacing:.16em;color:#6a5c4a;
+  cursor:pointer;background:none;border:0;font-family:inherit;z-index:20}
+#hs-about:hover{color:#a08a66}
+#hs-overlay{position:fixed;inset:0;background:rgba(6,5,4,.95);display:none;place-items:center;padding:26px;z-index:30;overflow:auto}
+#hs-overlay.show{display:grid}
+#hs-overlay .panel{max-width:620px;font-size:13.5px;line-height:2;color:#bcae95}
+#hs-overlay h3{margin:0 0 18px;font-size:16px;letter-spacing:.2em;color:#d8c8ab;font-weight:400}
+#hs-overlay p{margin:0 0 12px}#hs-overlay em{font-style:normal;color:#d8c8ab}
+#hs-closeAbout{margin-top:16px;background:none;border:1px solid #4a4034;color:#a08a66;
+  padding:8px 20px;border-radius:3px;font-family:inherit;letter-spacing:.16em;cursor:pointer}
+#hs-chapter{position:fixed;inset:0;background:#000;display:grid;place-items:center;opacity:0;
+  pointer-events:none;transition:opacity 1.2s;z-index:40;text-align:center}
+#hs-chapter.show{opacity:1;pointer-events:auto}
+#hs-chapter .t{font-size:clamp(15px,1.7vw,19px);letter-spacing:.5em;color:#cfc3ab}
+#hs-chapter .s{margin-top:26px;font-size:12px;letter-spacing:.3em;color:#5f584c}
+#hs-tsw{display:none}
+#hs-tsw button{background:none;border:1px solid #3a3228;color:#6a5c4a;font-family:inherit;
+  font-size:11px;letter-spacing:.1em;padding:5px 9px;border-radius:3px;cursor:pointer}
+#hs-tsw button.on{color:#d8c8ab;border-color:#8a7a62}
+@media (prefers-reduced-motion:reduce){*{transition:none!important;animation:none!important}}
+
+
+/* ══════ 引擎主舞台 / 对话文字（合并首页时被误改，这里恢复） ══════ */
+#stage{position:relative;z-index:2;flex:1 1 auto;min-height:0;overflow:hidden;display:flex;flex-direction:column}
+#scroll{position:relative;flex:0 1 auto;min-height:0;overflow-y:auto;padding:8px 0 0;
+  font-size:17.5px;line-height:1.95;color:#f2ead8;
+  text-shadow:0 2px 12px rgba(0,0,0,.98),0 0 3px rgba(0,0,0,.9)}
+#scroll::-webkit-scrollbar{width:6px}
+#scroll::-webkit-scrollbar-thumb{background:#2a231b;border-radius:3px}
+
+/* ══════ 手机横屏适配 ══════ */
+@media (max-height:520px) and (orientation:landscape){
+  #top{padding:6px 12px}
+  #top .t{font-size:11.5px;letter-spacing:.2em}
+  #top button{padding:3px 8px;font-size:10.5px}
+
+  #dialogPanel{height:auto;min-height:0;max-height:none;padding:0 4vw 8px}
+  #dname{font-size:12px;letter-spacing:.24em}
+  #scroll{font-size:14px;line-height:1.62;padding:3px 0 0}
+  #dgloss{font-size:11px;line-height:1.5;margin-top:5px}
+  #dnext{font-size:18px;bottom:2px}
+  #dthinking{bottom:18px;gap:6px}
+  #dthinking i{width:7px;height:7px}
+  #dctrl{bottom:2px;right:2vw}
+  #dctrl button{font-size:10px}
+
+  #dock{padding:6px 10px calc(6px + env(safe-area-inset-bottom))}
+  #inrow{gap:8px;max-width:none}
+  #say{min-height:34px;max-height:64px;padding:7px 10px;font-size:14px;border-radius:5px}
+  #send{padding:0 14px;font-size:13px}
+  #hint{display:none}
+
+  #stage{min-height:0}
+  .actor{height:106%;width:34%}
+  .actor.left{left:1%}
+  .actor.right{right:1%}
+  .actor.pleft{height:98%;width:30%;left:-6%}
+
+  #hs-titleWrap{top:2.2vh}
+  #hs-title{font-size:clamp(20px,4.6vw,30px);letter-spacing:.2em}
+  #hs-sub{font-size:10.5px;margin-top:5px}
+  #hs-rail{top:62px;bottom:5vh}
+  #hs-scroll{gap:9px}
+  .slip{width:clamp(60px,9.4vw,84px);height:clamp(170px,44vh,250px)}
+  .slipTxt{inset:8px 7px;font-size:clamp(9px,1.5vw,12px)}
+  #hs-slot{inset:7px 6px;font-size:clamp(14px,2.4vw,20px)}
+  #hs-slot:empty::before{font-size:10px;letter-spacing:.12em}
+  #hs-tip{bottom:2vh;font-size:10px;letter-spacing:.16em}
+  #hs-unroll{bottom:8.5vh;padding:6px 20px;font-size:11.5px}
+  #hs-afterward{right:3vw;font-size:clamp(15px,2.4vw,22px);letter-spacing:.18em;line-height:1.7}
+  #hs-chapter .t{font-size:13px}
+  #hs-chapter .s{font-size:10px}
+
+  #chap .ct{font-size:15px;letter-spacing:.3em}
+  #chap .cs{font-size:10px;margin-top:14px}
+  #cine .ct{font-size:15px;letter-spacing:.1em;line-height:1.7}
+  #cine .cg{font-size:11px;margin-top:8px}
+  #cine .cbtns{margin-top:20px;gap:12px}
+  #cine .cbtns button{padding:9px 16px;font-size:12.5px}
+
+  #side{left:4vw;max-width:54vw}
+  #side .st{font-size:16px;line-height:1.6}
+  #side .sg{font-size:11px;margin-top:9px}
+
+  #tapHint{bottom:2.6vh;gap:6px}
+  #tapHint .rings{width:26px;height:26px}
+  #tapHint .rings i:nth-child(1){width:24px;height:24px}
+  #tapHint .lbl{font-size:10px}
+  #endbox .t{font-size:18px}
+  #endbox .s{font-size:12px}
+}
+
+/* ══════ 竖屏：请横过来 ══════ */
+#rotateHint{position:fixed;inset:0;z-index:999;display:none;flex-direction:column;
+  align-items:center;justify-content:center;gap:22px;background:#0a0807;color:#c4b294;
+  text-align:center;padding:28px;font-family:"Kaiti SC","STKaiti","KaiTi","Songti SC",serif}
+#rotateHint .phone{width:52px;height:86px;border:2px solid #8a7a62;border-radius:10px;
+  position:relative;animation:rotPhone 2.4s ease-in-out infinite}
+#rotateHint .phone::after{content:"";position:absolute;left:50%;bottom:7px;transform:translateX(-50%);
+  width:5px;height:5px;border-radius:50%;background:#8a7a62}
+@keyframes rotPhone{0%,35%{transform:rotate(0)}65%,100%{transform:rotate(-90deg)}}
+#rotateHint .t1{font-size:16px;letter-spacing:.28em}
+#rotateHint .t2{font-size:11.5px;letter-spacing:.14em;color:#7d6f5c;line-height:1.9}
+/* 窄高比 → 竖屏：提示横过来（用宽高比判断，比 orientation 更稳） */
+@media (max-aspect-ratio: 3/4){
+  #rotateHint{display:flex}
+}
+
+
+</style>
+</head>
+<body>
+<div id="rotateHint">
+  <div class="phone"></div>
+  <div class="t1">请 把 手 机 横 过 来</div>
+  <div class="t2">横屏后自动进入，不用刷新</div>
+</div>
+
+<div id="app">
+  <div id="top">
+    <div class="t">治世不一道 <span id="aiBadge" class="badge">AI 检测中…</span></div>
+    <div class="r">
+      <button id="btnSfx">音效：开</button>
+      <button id="btnGloss">白话注：开</button>
+    </div>
+  </div>
+
+  <div id="stage">
+    <div id="bg" class="court"></div>
+    <div id="lightbeam"></div>
+    <div id="scrim"></div>
+    <div id="actors">
+      <div class="actor left" id="actL"><div class="ph"></div><img class="spr" alt=""><div class="nm">甘龙</div></div>
+      <div class="actor pleft" id="actP"><img class="spr" alt=""></div>
+      <div class="actor right" id="actR"><div class="ph"></div><img class="spr" alt=""><div class="nm">孝公</div></div>
+    </div>
+  </div>
+
+  <div id="dialogPanel" class="bare">
+    <div id="dname"></div>
+    <div id="scroll"></div>
+    <div id="dgloss"></div>
+    <div id="dnext">▼</div>
+    <div id="dthinking"><i></i><i></i><i></i></div>
+    <div id="dctrl"><button id="btnLog">记录</button></div>
+  </div>
+
+  <div id="dock">
+    <div id="opts"></div>
+    <div id="inrow">
+      <textarea id="say" rows="1" placeholder="你要说什么…（回车发送）"></textarea>
+      <button id="send">说</button>
+    </div>
+    <div id="hint">不设选项时，靠你自己组织说法。说不中也没关系，世界只是停一下。</div>
+  </div>
+</div>
+
+
+<!-- 首页：户版展开 -->
+<div id="hs-home">
+<div id="hs-stage">
+  <div id="hs-titleWrap">
+    <div id="hs-title">一百三十一年</div>
+    <div id="hs-sub">AI 游戏化学习活动 · 商鞅变法</div>
+  </div>
+
+  <div id="hs-rail">
+    <div id="hs-edge"></div>
+    <div id="hs-scroll"></div>
+    <div id="hs-cords"><i></i><i></i></div>
+  </div>
+
+  <div id="hs-tip">这是一卷户籍。往前是别人，最后一行留给你。</div>
+  <button id="hs-unroll">展 开</button>
+<div id="hs-afterward">公元前三五六年 · 栎阳<br><em>你的名字，进了这一卷。</em></div>
+</div>
+
+<button id="hs-about">关于本作 ›</button>
+
+<div id="hs-overlay">
+  <div class="panel">
+    <h3>关于本作</h3>
+    <p>本作的历史依据，以《商君书·更法》原文与《史记·商君列传》为主；尾声中的「黑夫」，出自 1975 年湖北云梦睡虎地秦墓出土的木牍家书（公元前 225 年）。</p>
+    <p><em>一、</em>你在朝堂上的身份是虚构的。史料记有商鞅其人，却没有记下他身边有这样一个弟子。</p>
+    <p><em>二、</em>本页简册的形制、分栏与登记项，参照里耶秦简户籍简：只记爵里、户人、亲属、伍长与奴婢，不记年龄、身高与财产。</p>
+    <p><em>三、</em>里耶为秦统一后洞庭郡迁陵县文书；本作设定在前 356 年，故里名与年代已按秦地调整。</p>
+    <button id="hs-closeAbout">知 道 了</button>
+  </div>
+</div>
+
+<div id="hs-chapter">
+  <div>
+    <div class="t">序 · 村口 · 前 356</div>
+    <div class="s">栎阳城外 · 什伍连坐</div>
+  </div>
+</div>
+
+<div id="hs-tsw"></div>
+</div>
+
+<div id="start">
+  <h1>治世不一道</h1>
+  <div class="sub">AI 游戏化学习活动 · 商鞅变法 · 初中</div>
+  <div class="note">
+    本作所有人物、时间与法令均有出处；<br>
+    你在朝堂上的身份（卫鞅门下属吏）为虚构，已声明。<br>
+    对话由 AI 生成，剧情与判定由程序决定。
+  </div>
+  <button class="go" id="btnStart">入 卷</button>
+  <div class="tip">建议 15–18 分钟 · 可随时点「状态」看内部数值</div>
+</div>
+
+<div id="prologue"><div class="plines" id="plines"></div></div>
+
+<div id="cine"><div class="ct" id="cineT"></div><div class="cg" id="cineG"></div><div class="cbtns" id="cineBtns"></div></div>
+<div id="fade"></div>
+<div id="chap"><div class="ct" id="chapT"></div><div class="cs" id="chapS"></div></div>
+<div id="side"><div class="st" id="sideT"></div><div class="sg" id="sideG"></div></div>
+<div id="tapHint"><div class="arr"></div><div class="rings"><i></i><i></i></div><div class="lbl">点 击 继 续</div></div>
+
+<div id="letterNote">
+  <div class="inner">
+    <div class="yr">公元前 225 年 · 秦国军营</div>
+    <p>1975 年，湖北云梦睡虎地，考古队在一座秦墓里挖出两片木牍。</p>
+    <p>写信的是两个士兵：黑夫，和比他小的弟弟惊。收信的是他们的哥哥衷，家里还有母亲。</p>
+    <p>信上没有谈天下大势，只问母亲身体好不好、要家里送钱来、要一件夏衣。</p>
+    <p class="key">这是中国现存最早的家书实物。我们知道秦国的律令、爵位和量器，却不知道一个士兵在那个冬天想对母亲说什么——直到这两片木牍出土。</p>
+    <div class="small">（学界对这两片木牍的年代多定为前 223 年；本作为与朝堂形成整数间隔，取前 225 年，特此说明。）</div>
+    <div class="small">六句为木牍释文，下方小字为今译。</div>
+  </div>
+  <div class="hint">点 击 继 续</div>
+</div>
+
+<div id="endbox">
+  <div>
+    <div class="t" id="endT"></div>
+    <div class="s" id="endS"></div>
+    <button id="btnAgain">重 新 入 卷</button>
+  </div>
+</div>
+
+<div id="dbg">
+  <button id="btnDbgClose">收起</button>
+  <h4>STATE</h4>
+  <div id="dbgkv"></div>
+  <h4 style="margin-top:14px">LOG（可导出给测试记录用）</h4>
+  <div class="log" id="dbglog"></div>
+  <button id="btnExport">导出 JSON</button>
+</div>
+
+<script>
+(function(){
+  'use strict';
+
+  /* ══════════════ 状态 ══════════════ */
+  const S = {
+    scene: 'start',
+    court: { stance: 100, round: 0, checked: false, silent: false },
+    king:  { resolve: 0, round: 0, checked: false },
+    village:{ round: 0, askedName: false, done: false },
+    pre: null,            // 序章抉择：reported（出声指认）| hidden（挡在他前面）
+    flag: null,           // 已废弃，保留仅为兼容旧存档/日志
+    log: [],              // 测试记录
+    glossOn: true
+  };
+
+  const $ = id => document.getElementById(id);
+  const scrollEl = $('scroll'), optsEl = $('opts'), sayEl = $('say');
+
+  /* ══════════════ 台词库（兜底：不接 AI 也能跑完整流程） ══════════════ */
+  const L = {
+    shangyang_open: [
+      ['疑行无成，疑事无功。君亟定变法之虑，殆无顾天下之议之也。','行动犹疑就成不了事，做事犹疑就不会有功。国君及早下定变法的决心，不必顾忌天下人的议论。'],
+      ['吾言已尽。子其言之。','我要说的说完了。你来说吧。']
+    ],
+    gandong_open: [['圣人不易民而教，智者不变法而治。','圣人不改变百姓的旧习来教化，智者不改变旧法来治理。']],
+    court: {
+      '击中': [
+        ['此言近矣。然秦之故法，岂无一善乎？','这话有点道理。可秦国的旧法，难道就没有一点好处吗？'],
+        ['……子言是也。然老臣所虑，非一日之利。','……你说得对。可老臣担心的是，这不止一天的利害。'],
+        ['……老臣无以为对。','……老臣没什么可对的了。']
+      ],
+      '有道理': [
+        ['子之言，有理而未切。老臣所问者：变与不变，孰利？','你的话有道理，但没说到点上。老臣问的是：变和不变，哪个更有利？']
+      ],
+      '未击中': [
+        ['子未答老臣所问。','你没有回答老臣的问题。'],
+        ['子言及旁事，未及本。','你说的是旁的事，不是根本。']
+      ],
+      '失言': [
+        ['善哉！子既知变法亡国，当守旧章以安社稷。','说得好！你既然知道变法会亡国，就该守旧制安定国家。'],
+        ['子乃为老夫张目乎？','你这是替老夫说话吗？']
+      ],
+      '破防': [['子何出怪语？欲论法则进言。','你说什么怪话？要论法就进言。']]
+    },
+    silent_branch: [
+      ['子之所言，世俗之言也。','你所说的，不过是世俗之见。'],
+      ['治世不一道，便国不必古。','治理国家没有一成不变的办法，只要对国家有利，就不必照古制办。'],
+      ['反古者不可非，而循礼者不足多。','反对古制的不该被非难，墨守礼制的也不值得称赞。']
+    ],
+    king_open: [['今吾欲变法以治，更礼以教百姓，恐天下之议我也。','如今我想变法治理国家，更改礼制教化百姓，只怕天下人议论我。']],
+    king: {
+      '击中': [
+        ['善。然三年之后，若民怨，谁当其咎？','好。可三年之后要是百姓抱怨，谁来担这个罪？'],
+        ['子言近矣。然其法如何行之？','你说得接近了。可这法子怎么施行？']
+      ],
+      '有道理': [['子言有理。然寡人所问者，非道理也。','你说得有理。可寡人问的不是道理。']],
+      '未击中': [['子未答寡人所问。','你没有回答寡人的问题。']],
+      '失言': [['子乃教寡人守旧乎？','你这是在教寡人守旧吗？']]
+    },
+    village: [
+      ['大人。','大人。'],
+      ['我家的地，还归我吗？','我家的地，还归我吗？']
+    ],
+    village_round: {
+      1: [['他们说，亩数要重新量。','他们说，亩数要重新量。'],['我爹埋在那头。量到那边，算谁的？','我爹埋在那头。量到那边，算谁的？']],
+      2: [['新法说，五家为伍。','新法说，五家为伍。'],['伍里的人，看我的眼神不一样了。','伍里的人，看我的眼神不一样了。']],
+      3: [['大人，朝堂上……算了。','大人，朝堂上……算了。']]
+    },
+    name_reply: [['大人叫我什么，就是什么。','大人叫我什么，就是什么。']],
+    king_final: [
+      ['善。吾闻穷巷多吝，曲学多辩。','好。我听说偏僻小巷的人少见多怪，学识浅陋的人喜欢争辩。'],
+      ['拘世以议，寡人不之疑矣。','被世俗之见拘束着议论，我不再疑虑了。']
+    ],
+    letter: [
+      ['二月辛巳，黑夫、惊敢再拜问衷，母毋恙也？','二月辛巳这天，黑夫和惊恭恭敬敬地问候大哥衷：母亲身体还好吧？'],
+      ['黑夫、惊毋恙也。','我们兄弟俩都还好。'],
+      ['前日黑夫与惊别，今复会矣。','前些天我们俩因为打仗没在一处，今天又见面了。'],
+      ['遗黑夫钱，母操夏衣来。','请家里送些钱来，让母亲做夏天穿的衣服带来。'],
+      ['……用垣柏钱矣，室弗遗，即死矣。','……借垣柏的钱都用光了，家里再不给，真要出人命了。'],
+      ['急急急。','急急急。']
+    ]
+  };
+
+  /* ══════════════ 规则判定（四档，唯一权威） ══════════════ */
+  const RE = {
+    broken:  /(AI|ai|机器人|你是假的|游戏|模型|程序|gpt|deepseek|人工智能)/i,
+    jing:    /(三代|五霸|圣人|先王|古|治世|便国|不法其故|更礼|礼)/,
+    fangan:  /(试|三年|一县|期|若不成|复其旧|分步|先.{0,4}后|设限|立约)/,
+    huiying: /(秦|兵|地|民|强弱|强|弱|寡|利|弊|税|农|战)/,
+    shiyan:  /(亡国|祖宗之法不可|不必变法|不可变|守旧|变则乱|法不可改|民不可扰)/,
+    cover:   /(但|然而|未必|不然|岂|何以|非也|不若|宁|反而|恰恰)/
+  };
+
+  function classify(text){
+    const s = (text || '').trim();
+    if (!s) return { v:'未击中', cat:'空' };
+    if (RE.broken.test(s)) return { v:'破防', cat:'破防' };
+    if (RE.shiyan.test(s) && !RE.cover.test(s)) return { v:'失言', cat:'失言' };
+    if (RE.jing.test(s))   return { v:'击中', cat:'引经' };
+    if (RE.fangan.test(s)) return { v:'击中', cat:'方案' };
+    if (RE.huiying.test(s))return { v:'击中', cat:'回应' };
+    if (s.length >= 10 && /(法|民|国|秦|变)/.test(s)) return { v:'有道理', cat:'边缘' };
+    return { v:'未击中', cat:'无关' };
+  }
+
+  const DELTA = {
+    court: { '引经':-25, '方案':-30, '回应':-20, '有道理':-10, '失言':+10, '破防':0, '无关':0 },
+    king:  { '引经':+20, '方案':+30, '回应':+25, '有道理':+8,  '失言':-5, '破防':0, '无关':0 }
+  };
+
+  /* ══════════════ 输出 ══════════════ */
+  function esc(s){ return String(s).replace(/[&<>]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;'}[c])); }
+
+  /* ══════════ AI 层：调本地代理，失败退回兜底 ══════════ */
+  /* 同源时用相对路径（手机通过局域网打开也能用），file:// 时退回本机 */
+  var AI_BASE = (location.protocol === 'file:') ? 'http://127.0.0.1:3001' : '';
+  var AI = { on: false, base: AI_BASE, fails: 0, wins: 0, lastMs: 0 };
+
+  /* 每个浏览器一个会话 id，保证玩家之间互不干扰 */
+  var SESS = (function(){
+    try {
+      var s = localStorage.getItem('zsybd_sess');
+      if (!s) { s = 'p_' + Math.random().toString(36).slice(2, 10); localStorage.setItem('zsybd_sess', s); }
+      return s;
+    } catch (e) { return 'p_' + Math.random().toString(36).slice(2, 10); }
+  })();
+
+  /* 最近 6 条对话（3 轮），每次请求带上去 */
+  var HIST = [];
+  function histPush(who, text){ HIST.push({ who: who, text: text }); if (HIST.length > 6) HIST.shift(); }
+  function histReset(){ HIST = []; }
+
+  function aiProbe(){
+    fetch(AI.base + '/health', { method: 'GET' })
+      .then(function(r){ return r.json(); })
+      .then(function(j){
+        AI.on = !!(j && j.ok);
+        var el = $('aiBadge');
+        if (el) {
+          el.textContent = AI.on ? 'AI 已连' : 'AI 离线（兜底台词）';
+          el.className = 'badge ' + (AI.on ? 'on' : 'off');
+        }
+      })
+      .catch(function(){
+        AI.on = false;
+        var el = $('aiBadge');
+        if (el) { el.textContent = 'AI 离线（兜底台词）'; el.className = 'badge off'; }
+      });
+  }
+
+  /* 请 AI 说一句；失败返回兜底 */
+  function aiReply(npc, text, fallback){
+    return new Promise(function(resolve){
+      if (!AI.on) return resolve(fallback);
+      histPush('玩家', text);
+      showThinking(npc);
+      var t0 = Date.now();
+      var ctrl = ('AbortController' in window) ? new AbortController() : null;
+      var timer = setTimeout(function(){ if (ctrl) ctrl.abort(); }, 20000);
+      fetch(AI.base + '/say', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ npc: npc, text: text, user: SESS, history: HIST.slice(-6) }),
+        signal: ctrl ? ctrl.signal : undefined
+      })
+        .then(function(r){ return r.json(); })
+        .then(function(j){
+          clearTimeout(timer);
+          AI.lastMs = Date.now() - t0;
+          if (j && j.ok && j.line) { AI.wins++; histPush(npc, j.line); resolve([j.line, j.gloss || '']); }
+          else { AI.fails++; resolve(fallback); }
+        })
+        .catch(function(){
+          clearTimeout(timer);
+          AI.fails++;
+          resolve(fallback);
+        });
+    });
+  }
+
+  var thinkingOn = false;
+  function showThinking(npc){
+    thinkingOn = true;
+    lock(true);
+    /* 不覆盖玩家刚说的话，只在他那一侧亮三点 */
+    var th = $('dthinking');
+    if (th) th.classList.add('on');
+    $('dnext').classList.remove('on');
+  }
+  function endThinking(){
+    thinkingOn = false;
+    lock(false);
+    var th = $('dthinking');
+    if (th) th.classList.remove('on');
+    /* 三点先消失，再让 ▼ 冒出来，避免两个提示叠在一起 */
+    setTimeout(function(){
+      if (!thinkingOn && curItem && !typing) $('dnext').classList.add('on');
+    }, 260);
+  }
+
+  /* ══════════ galgame 演出层：队列 + 打字机 ══════════ */
+  var Q = [], typing = false, curItem = null, typer = null;
+
+  var WHO = { court:'甘龙', king:'孝公', village:'邻人', epilogue:'黑夫' };
+
+  /* 幕与幕之间、分支起点：强制重置对话层，避免"队列挂着旧句不显示" */
+  function resetDialogue(hide){
+    clearInterval(typer);
+    typing = false;
+    curItem = null;
+    Q = [];
+    if (hide) { panelShow(false); setDialog(false); $('dock').classList.add('hide'); }
+    else { panelShow(true); setDialog(true); }
+  }
+  function beginDialogue(){ resetDialogue(false); }
+
+  function push(role, text, gloss, whoOverride, vi){
+    var who = whoOverride || (role === 'npc' ? (WHO[S.scene] || '') : (role === 'player' ? (window.PLAYER_NAME || '你') : ''));
+    Q.push({ role: role, who: who, vi: (vi === undefined ? null : vi), text: text, gloss: gloss });
+    if (!curItem) nextLine();
+  }
+  function sys(text){
+    push('system', text, null);
+  }
+  function setDialog(on){
+    var d = $('dialogPanel');
+    if (!d) return;
+    d.classList.toggle('bare', !on);
+  }
+  /* 固定演出时整块对话面板收起，让画面满屏 */
+  function panelShow(on){
+    var d = $('dialogPanel');
+    if (d) d.style.display = on ? '' : 'none';
+  }
+
+  function nextLine(){
+    panelShow(true);
+    if (!Q.length){
+      curItem = null;
+      $('dnext').classList.remove('on');
+      $('dock').classList.remove('hide');
+      return;
+    }
+    setDialog(true);
+    var _th = $('dthinking'); if (_th) _th.classList.remove('on');
+    curItem = Q.shift();
+    if (curItem.role === 'npc' && curItem.who) whoSpeaks(curItem.who);
+    if (curItem.role === 'player') { var p = actP; if (p) p.style.opacity = '.9'; }
+    $('dock').classList.add('hide');
+    $('dnext').classList.remove('on');
+    var d = curItem;
+    if (d.vi !== null && d.vi !== undefined) playLetterVoice(d.vi);
+    if (d.vi === 5) armEpilogueChoice();      /* 家书最后一句：开始静默计时 */
+    $('dname').textContent = d.role === 'system' ? '' : (d.who || '');
+    $('dgloss').textContent = '';
+    typeText(d.text, d.gloss);
+  }
+  function typeText(text, gloss){
+    typing = true;
+    clearInterval(typer);
+    SFX.duck(true);                 /* 说话时环境压下去 */
+    var box = $('scroll');
+    box.textContent = '';
+    var i = 0, n = text.length;
+    var speed = n > 60 ? 18 : 30;
+    typer = setInterval(function(){
+      i += 1;
+      box.textContent = text.slice(0, i);
+      if (i % 3 === 0) SFX.tick();  /* 极轻的笔点声 */
+      if (i >= n) {
+        clearInterval(typer); typing = false;
+        if (gloss && S.glossOn) $('dgloss').textContent = gloss;
+        if (!thinkingOn) $('dnext').classList.add('on');
+        SFX.duck(false);
+        afterLine();
+      }
+    }, speed);
+  }
+  function finishTyping(){
+    if (!typing || !curItem) return;
+    clearInterval(typer); typing = false;
+    $('scroll').textContent = curItem.text;
+    if (curItem.gloss && S.glossOn) $('dgloss').textContent = curItem.gloss;
+    if (!thinkingOn) $('dnext').classList.add('on');
+    SFX.duck(false);
+    afterLine();
+  }
+  /* 等队列里的台词全部播完（且玩家点完）再执行下一幕 */
+  function afterDialogue(cb){
+    (function chk(){
+      /* 必须同时满足：没有待播台词、没有在打字、最后一句已经被玩家点掉 */
+      if (Q.length === 0 && !typing && !curItem) { cb(); }
+      else setTimeout(chk, 130);
+    })();
+  }
+
+  function afterLine(){
+    if (autoMode) { setTimeout(function(){ if (!typing) advance(); }, autoDelay); return; }
+    /* 没有待播台词时，把输入框放出来（不用非得点一下） */
+    if (!Q.length) $('dock').classList.remove('hide');
+  }
+  function advance(){
+    if (typing) { finishTyping(); return; }
+    if (skipEpilogueChoice()) return;          /* 静默期点一下 → 立刻出选项 */
+    if (Q.length) nextLine();
+    else if (curItem) {
+      curItem = null; stopLetterVoice();
+      $('dnext').classList.remove('on');
+      $('dock').classList.remove('hide');
+      if (epiChoiceTimer) { skipEpilogueChoice(); return; }   /* 点掉「急急急」→ 直接出选项 */
+    }
+  }
+
+  /* 点击对话框推进；空格/回车也可以（输入框未聚焦时） */
+  var autoMode = false, autoDelay = 1400;
+  function pick(arr, i){ return arr[i % arr.length]; }
+
+  function lock(on){ sayEl.disabled = on; $('send').disabled = on; }
+  function clearOpts(){ optsEl.innerHTML = ''; }
+  function showOpts(list){
+    optsEl.innerHTML = '';
+    $('dock').classList.remove('hide');   /* 选项在 dock 里：静场把 dock 藏了，这里必须恢复 */
+    list.forEach(o => {
+      const b = document.createElement('button');
+      b.textContent = o.label;
+      if (o.silent) b.className = 'silent';
+      b.onclick = () => { clearOpts(); say(o.text, true); };
+      optsEl.appendChild(b);
+    });
+  }
+
+  /* ══════════════ 记录 ══════════════ */
+  function logTurn(o){ S.log.push(Object.assign({ t: Date.now(), scene: S.scene }, o)); renderDbg(); }
+
+  /* 背景切换 */
+  /* 立绘：left/right 给名字，'none' 隐藏；没有图片时显示剪影占位 */
+  var SPRITES = {
+    '甘龙':   { src: '素材/gan-ping.png', screen: false },
+    '邻人':   { src: '素材/lin-di.png',   screen: false },
+    '孝公':   { src: '素材/xiao-yu.png',  screen: false },
+    '孝公决断': { src: '素材/xiao-jue.png', screen: false },
+    '商鞅':   { src: '素材/shang.png',    screen: false },
+    '商鞅右': { src: '素材/shang2.png',   screen: false },
+    /* 黑夫立绘：图还没生成时静默跳过；生成后放 素材/heifu.png 就自动出现 */
+    '黑夫':   { src: '素材/heifu.png',    screen: false }
+  };
+
+  /* 说话者亮、其余压暗 */
+  function whoSpeaks(name){
+    ['actL', 'actR'].forEach(function(id){
+      var el = $(id);
+      if (!el) return;
+      /* 不在场的人不参与调光，并且把残留的内联透明度清掉 */
+      if (!el.classList.contains('on') || !el.dataset.name) {
+        el.classList.remove('dim');
+        el.style.opacity = '';
+        return;
+      }
+      if (el.dataset.name === name) { el.classList.remove('dim'); el.style.opacity = '1'; }
+      else { el.classList.add('dim'); el.style.opacity = '.42'; }
+    });
+  }
+  function setActors(left, right, dimLeft){
+    var L = $('actL'), R = $('actR');
+    function apply(el, name, dim){
+      if (!name) { el.classList.remove('on','dim'); el.style.opacity = ''; delete el.dataset.name; return; }
+      el.querySelector('.nm').textContent = name;
+      el.dataset.name = name;
+      var img = el.querySelector('.spr');
+      var sp = SPRITES[name];
+      if (sp) {
+        var url = (typeof sp === 'string') ? sp : sp.src;
+        img.src = url; el.classList.add('hasImg');
+        img.classList.toggle('blend', !!(sp && sp.screen));
+      }
+      else { img.removeAttribute('src'); el.classList.remove('hasImg'); }
+      el.classList.toggle('dim', !!dim);
+      el.style.opacity = '';
+      el.classList.add('on');
+    }
+    apply(L, left, dimLeft);
+    apply(R, right, false);
+  }
+
+  function setBg(cls){
+    const b = $('bg');
+    b.className = "";
+    setTimeout(function(){ b.className = cls + ' loaded'; }, 30);
+  }
+
+  /* ══════════════ 场景：开始 ══════════════ */
+  function setPlayer(on){
+    var p = $('actP');
+    if (!p) return;
+    if (on) p.classList.add('on'); else p.classList.remove('on');
+  }
+
+  function loadPlayer(){
+    var p = $('actP'); if (!p) return;
+    var img = p.querySelector('.spr');
+    img.onload = function(){ p.classList.add('hasImg'); };
+    img.onerror = function(){ p.classList.remove('on'); };
+    img.src = '素材/player.png';
+  }
+  /* ══════════ 音效引擎（全部 WebAudio 合成，零文件） ══════════ */
+  var SFX = (function(){
+    var ctx = null, master = null, ambBus = null, on = true;
+    var loops = { wind:null, drone:null, drums:null, room:null };
+    var drumsTimer = null, windTimer = null;
+
+    function ensure(){
+      if (ctx) { if (ctx.state === 'suspended') ctx.resume(); return ctx; }
+      try {
+        var AC = window.AudioContext || window.webkitAudioContext;
+        if (!AC) return null;
+        ctx = new AC();
+        master = ctx.createGain();
+        master.gain.value = on ? 0.62 : 0;
+        /* 软限幅：防止多个音效叠加时削波 */
+        var comp = ctx.createDynamicsCompressor();
+        comp.threshold.value = -10;
+        comp.knee.value = 10;
+        comp.ratio.value = 5;
+        comp.attack.value = 0.004;
+        comp.release.value = 0.18;
+        master.connect(comp);
+        comp.connect(ctx.destination);
+        ambBus = ctx.createGain();
+        ambBus.gain.value = 1;
+        ambBus.connect(master);
+      } catch(e) { ctx = null; }
+      return ctx;
+    }
+
+    function noiseBuffer(sec){
+      var sr = ctx.sampleRate, n = Math.floor(sec * sr);
+      var buf = ctx.createBuffer(1, n, sr);
+      var d = buf.getChannelData(0);
+      for (var i = 0; i < n; i++) d[i] = Math.random() * 2 - 1;
+      return buf;
+    }
+
+    /* 风：带通噪声 + 缓慢起伏 */
+    function wind(start){
+      if (!ensure()) return;
+      if (!start) {
+        if (loops.wind) { loops.wind.g.gain.exponentialRampToValueAtTime(0.0001, ctx.currentTime + 1.2);
+          var l = loops.wind; setTimeout(function(){ try{ l.src.stop(); }catch(e){} }, 1300); loops.wind = null; }
+        return;
+      }
+      if (loops.wind) return;
+      var src = ctx.createBufferSource(); src.buffer = noiseBuffer(3); src.loop = true;
+      var bp = ctx.createBiquadFilter(); bp.type = 'bandpass'; bp.frequency.value = 620; bp.Q.value = 0.7;
+      var g = ctx.createGain(); g.gain.value = 0.0001;
+      src.connect(bp); bp.connect(g); g.connect(master);
+      src.start();
+      g.gain.exponentialRampToValueAtTime(0.08, ctx.currentTime + 2.5);
+      var lfo = ctx.createOscillator(), lg = ctx.createGain();
+      lfo.frequency.value = 0.07; lg.gain.value = 260;
+      lfo.connect(lg); lg.connect(bp.frequency); lfo.start();
+      loops.wind = { src: src, g: g, lfo: lfo };
+    }
+
+    /* 低频弦：两个正弦 + 缓慢颤动，压场用 */
+    function drone(start){
+      if (!ensure()) return;
+      if (!start) {
+        if (loops.drone) {
+          var d0 = loops.drone;
+          d0.g.gain.exponentialRampToValueAtTime(0.0001, ctx.currentTime + 2.0);
+          setTimeout(function(){ try{ d0.a.stop(); d0.b.stop(); d0.lfo.stop(); }catch(e){} }, 2200);
+          loops.drone = null;
+        }
+        return;
+      }
+      if (loops.drone) return;
+      var a = ctx.createOscillator(); a.type='sine'; a.frequency.value = 55;
+      var b = ctx.createOscillator(); b.type='sine'; b.frequency.value = 82.5; b.detune.value = -6;
+      var g = ctx.createGain(); g.gain.value = 0.0001;
+      var lfo = ctx.createOscillator(), lg = ctx.createGain();
+      lfo.frequency.value = 0.13; lg.gain.value = 0.012;
+      lfo.connect(lg); lg.connect(g.gain);
+      a.connect(g); b.connect(g); g.connect(master);
+      a.start(); b.start(); lfo.start();
+      g.gain.exponentialRampToValueAtTime(0.075, ctx.currentTime + 3.0);
+      loops.drone = { a:a, b:b, g:g, lfo:lfo };
+    }
+
+    /* 远处战鼓：每 1.2 秒一下，很低 */
+    function drums(start){
+      if (!ensure()) return;
+      if (!start) { clearInterval(drumsTimer); drumsTimer = null; return; }
+      if (drumsTimer) return;
+      function hit(){
+        if (!ctx) return;
+        var t0 = ctx.currentTime;
+        var o = ctx.createOscillator(), g = ctx.createGain();
+        o.frequency.setValueAtTime(72, t0);
+        o.frequency.exponentialRampToValueAtTime(38, t0 + 0.25);
+        g.gain.setValueAtTime(0.0001, t0);
+        g.gain.exponentialRampToValueAtTime(0.23, t0 + 0.02);
+        g.gain.exponentialRampToValueAtTime(0.0001, t0 + 0.55);
+        o.connect(g); g.connect(master); o.start(t0); o.stop(t0 + 0.6);
+      }
+      hit();
+      drumsTimer = setInterval(hit, 1200);
+    }
+
+    /* 空殿底噪：极低的低频房间声 + 偶尔烛火爆裂 */
+    var roomTimer = null;
+    function room(start){
+      if (!ensure()) return;
+      if (!start) {
+        clearInterval(roomTimer); roomTimer = null;
+        if (loops.room) {
+          var r0 = loops.room;
+          r0.g.gain.exponentialRampToValueAtTime(0.0001, ctx.currentTime + 1.5);
+          setTimeout(function(){ try{ r0.src.stop(); }catch(e){} }, 1700);
+          loops.room = null;
+        }
+        return;
+      }
+      if (loops.room) return;
+      var src = ctx.createBufferSource(); src.buffer = noiseBuffer(4); src.loop = true;
+      var lp = ctx.createBiquadFilter(); lp.type='lowpass'; lp.frequency.value = 240;
+      var g = ctx.createGain(); g.gain.value = 0.0001;
+      src.connect(lp); lp.connect(g); g.connect(ambBus);
+      src.start();
+      g.gain.exponentialRampToValueAtTime(0.078, ctx.currentTime + 2.0);
+      loops.room = { src: src, g: g };
+      /* 烛火：每 4–9 秒一声极轻的爆裂 */
+      roomTimer = setInterval(function(){
+        if (!ctx || !loops.room) return;
+        var t0 = ctx.currentTime;
+        var s2 = ctx.createBufferSource(); s2.buffer = noiseBuffer(0.03);
+        var bp = ctx.createBiquadFilter(); bp.type='bandpass'; bp.frequency.value = 3200; bp.Q.value = 6;
+        var g2 = ctx.createGain();
+        g2.gain.setValueAtTime(0.0001, t0);
+        g2.gain.exponentialRampToValueAtTime(0.046, t0 + 0.004);
+        g2.gain.exponentialRampToValueAtTime(0.0001, t0 + 0.05);
+        s2.connect(bp); bp.connect(g2); g2.connect(ambBus);
+        s2.start(t0); s2.stop(t0 + 0.06);
+      }, 4000 + Math.random() * 5000);
+    }
+
+    /* 打字木声：极短、极轻，像笔尖点简 */
+    function tick(){
+      if (!ensure()) return;
+      var t0 = ctx.currentTime;
+      var src = ctx.createBufferSource(); src.buffer = noiseBuffer(0.02);
+      var bp = ctx.createBiquadFilter(); bp.type='bandpass'; bp.frequency.value = 1600; bp.Q.value = 4;
+      var g = ctx.createGain();
+      g.gain.setValueAtTime(0.0001, t0);
+      g.gain.exponentialRampToValueAtTime(0.033, t0 + 0.003);
+      g.gain.exponentialRampToValueAtTime(0.0001, t0 + 0.03);
+      src.connect(bp); bp.connect(g); g.connect(master);
+      src.start(t0); src.stop(t0 + 0.04);
+    }
+
+    /* 说话时环境让路（压低到 65%） */
+    function duck(on){
+      if (!ensure() || !ambBus) return;
+      var target = on ? 0.65 : 1.0;
+      ambBus.gain.cancelScheduledValues(ctx.currentTime);
+      ambBus.gain.linearRampToValueAtTime(target, ctx.currentTime + 0.35);
+    }
+
+    /* ── 首页：烛下案头 ── */
+    var homeLoop = null, homeTimers = [];
+    function farBell(){
+      if (!ctx || !loops.home) return;
+      var f0 = 98;                                   /* 很低的钟 */
+      [1, 2.4, 4.1].forEach(function(r, i){
+        var t0 = ctx.currentTime;
+        var o = ctx.createOscillator(), g = ctx.createGain();
+        o.type = 'sine'; o.frequency.value = f0 * r;
+        var peak = 0.105 / (i + 1.6);
+        g.gain.setValueAtTime(0.0001, t0);
+        g.gain.exponentialRampToValueAtTime(peak, t0 + 0.02);
+        g.gain.exponentialRampToValueAtTime(0.0001, t0 + 3.0 - i * 0.6);
+        o.connect(g); g.connect(ambBus);
+        o.start(t0); o.stop(t0 + 4.4);
+      });
+    }
+    function breeze(){
+      if (!ctx || !loops.home) return;
+      var t0 = ctx.currentTime;
+      var src = ctx.createBufferSource(); src.buffer = noiseBuffer(3.2);
+      var bp = ctx.createBiquadFilter(); bp.type='bandpass'; bp.frequency.value = 700; bp.Q.value = 0.5;
+      var g = ctx.createGain();
+      g.gain.setValueAtTime(0.0001, t0);
+      g.gain.exponentialRampToValueAtTime(0.055, t0 + 1.1);
+      g.gain.exponentialRampToValueAtTime(0.0001, t0 + 3.0);
+      src.connect(bp); bp.connect(g); g.connect(ambBus);
+      src.start(t0); src.stop(t0 + 3.2);
+    }
+    function woodCreak(){
+      if (!ctx || !loops.home) return;
+      var t0 = ctx.currentTime;
+      var o = ctx.createOscillator(), g = ctx.createGain();
+      o.type = 'triangle';
+      o.frequency.setValueAtTime(320, t0);
+      o.frequency.exponentialRampToValueAtTime(170, t0 + 0.22);
+      g.gain.setValueAtTime(0.0001, t0);
+      g.gain.exponentialRampToValueAtTime(0.042, t0 + 0.05);
+      g.gain.exponentialRampToValueAtTime(0.0001, t0 + 0.30);
+      o.connect(g); g.connect(ambBus); o.start(t0); o.stop(t0 + 0.32);
+    }
+    function candlePop(){
+      if (!ctx || !loops.home) return;
+      var t0 = ctx.currentTime;
+      var s2 = ctx.createBufferSource(); s2.buffer = noiseBuffer(0.03);
+      var bp = ctx.createBiquadFilter(); bp.type='bandpass'; bp.frequency.value = 3200; bp.Q.value = 6;
+      var g2 = ctx.createGain();
+      g2.gain.setValueAtTime(0.0001, t0);
+      g2.gain.exponentialRampToValueAtTime(0.040, t0 + 0.004);
+      g2.gain.exponentialRampToValueAtTime(0.0001, t0 + 0.05);
+      s2.connect(bp); bp.connect(g2); g2.connect(ambBus);
+      s2.start(t0); s2.stop(t0 + 0.06);
+    }
+    function randTimer(fn, minS, maxS){
+      function loop(){
+        var id = setTimeout(function(){
+          fn();
+          loop();
+        }, (minS + Math.random() * (maxS - minS)) * 1000);
+        homeTimers.push(id);
+      }
+      loop();
+    }
+
+    function home(start){
+      if (!ensure()) return;
+      if (!start) {
+        homeTimers.forEach(clearTimeout); homeTimers = [];
+        if (loops.home) {
+          var h0 = loops.home;
+          h0.g.gain.exponentialRampToValueAtTime(0.0001, ctx.currentTime + 1.6);
+          setTimeout(function(){ try{ h0.src.stop(); }catch(e){} }, 1800);
+          loops.home = null;
+        }
+        return;
+      }
+      if (loops.home) return;
+      var src = ctx.createBufferSource(); src.buffer = noiseBuffer(4); src.loop = true;
+      var lp = ctx.createBiquadFilter(); lp.type='lowpass'; lp.frequency.value = 200;
+      var g = ctx.createGain(); g.gain.value = 0.0001;
+      src.connect(lp); lp.connect(g); g.connect(ambBus);
+      src.start();
+      g.gain.exponentialRampToValueAtTime(0.062, ctx.currentTime + 2.2);
+      loops.home = { src: src, g: g };
+      randTimer(candlePop, 6, 12);
+      randTimer(woodCreak, 15, 25);
+      randTimer(breeze, 20, 35);
+      randTimer(farBell, 5, 5);          /* 钟：每 5 秒一次 */
+    }
+
+    /* 钟磬：三个泛音，长余韵 */
+    function bell(freq){
+      if (!ensure()) return;
+      var f0 = freq || 196;
+      [1, 2.76, 5.4].forEach(function(r, i){
+        var t0 = ctx.currentTime;
+        var o = ctx.createOscillator(), g = ctx.createGain();
+        o.type = 'sine'; o.frequency.value = f0 * r;
+        var peak = 0.16 / (i + 1.4);
+        g.gain.setValueAtTime(0.0001, t0);
+        g.gain.exponentialRampToValueAtTime(peak, t0 + 0.01);
+        g.gain.exponentialRampToValueAtTime(0.0001, t0 + 2.6 - i * 0.5);
+        o.connect(g); g.connect(master); o.start(t0); o.stop(t0 + 2.8);
+      });
+    }
+
+    /* 竹简展开：几下短促的"咔啦" */
+    function crack(){
+      if (!ensure()) return;
+      for (var k = 0; k < 4; k++){
+        (function(k){
+          var t0 = ctx.currentTime + k * 0.055;
+          var src = ctx.createBufferSource(); src.buffer = noiseBuffer(0.08);
+          var bp = ctx.createBiquadFilter(); bp.type='bandpass'; bp.frequency.value = 1800 + k * 600; bp.Q.value = 2.5;
+          var g = ctx.createGain();
+          g.gain.setValueAtTime(0.0001, t0);
+          g.gain.exponentialRampToValueAtTime(0.09, t0 + 0.006);
+          g.gain.exponentialRampToValueAtTime(0.0001, t0 + 0.07);
+          src.connect(bp); bp.connect(g); g.connect(master);
+          src.start(t0); src.stop(t0 + 0.1);
+        })(k);
+      }
+    }
+
+    /* 锄地：闷响 + 土粒声 */
+    function hoe(){
+      if (!ensure()) return;
+      var t0 = ctx.currentTime;
+      var o = ctx.createOscillator(), g = ctx.createGain();
+      o.frequency.setValueAtTime(140, t0); o.frequency.exponentialRampToValueAtTime(50, t0 + 0.12);
+      g.gain.setValueAtTime(0.0001, t0); g.gain.exponentialRampToValueAtTime(0.1, t0 + 0.01);
+      g.gain.exponentialRampToValueAtTime(0.0001, t0 + 0.2);
+      o.connect(g); g.connect(master); o.start(t0); o.stop(t0 + 0.22);
+      var src = ctx.createBufferSource(); src.buffer = noiseBuffer(0.12);
+      var lp = ctx.createBiquadFilter(); lp.type='lowpass'; lp.frequency.value = 1200;
+      var g2 = ctx.createGain();
+      g2.gain.setValueAtTime(0.0001, t0); g2.gain.exponentialRampToValueAtTime(0.05, t0 + 0.01);
+      g2.gain.exponentialRampToValueAtTime(0.0001, t0 + 0.15);
+      src.connect(lp); lp.connect(g2); g2.connect(master); src.start(t0); src.stop(t0 + 0.16);
+    }
+
+    /* 心跳：两下低频 */
+    function heart(){
+      if (!ensure()) return;
+      [0, 0.34].forEach(function(dt, i){
+        var t0 = ctx.currentTime + dt;
+        var o = ctx.createOscillator(), g = ctx.createGain();
+        o.frequency.setValueAtTime(58, t0); o.frequency.exponentialRampToValueAtTime(40, t0 + 0.16);
+        g.gain.setValueAtTime(0.0001, t0); g.gain.exponentialRampToValueAtTime(i ? 0.1 : 0.14, t0 + 0.015);
+        g.gain.exponentialRampToValueAtTime(0.0001, t0 + 0.28);
+        o.connect(g); g.connect(master); o.start(t0); o.stop(t0 + 0.3);
+      });
+    }
+
+    /* 翻简：极短的高频"嗒" */
+    function page(){
+      if (!ensure()) return;
+      var t0 = ctx.currentTime;
+      var src = ctx.createBufferSource(); src.buffer = noiseBuffer(0.05);
+      var hp = ctx.createBiquadFilter(); hp.type='highpass'; hp.frequency.value = 2600;
+      var g = ctx.createGain();
+      g.gain.setValueAtTime(0.0001, t0); g.gain.exponentialRampToValueAtTime(0.045, t0 + 0.005);
+      g.gain.exponentialRampToValueAtTime(0.0001, t0 + 0.05);
+      src.connect(hp); hp.connect(g); g.connect(master); src.start(t0); src.stop(t0 + 0.06);
+    }
+
+    function setOn(v){
+      on = !!v;
+      if (!ensure()) return;
+      master.gain.value = on ? 0.62 : 0;
+      try { localStorage.setItem('zsybd_sfx', on ? '1' : '0'); } catch(e){}
+    }
+    function isOn(){ return on; }
+    function state(){
+      return { ctx: ctx ? ctx.state : 'none', on: on,
+               wind: !!loops.wind, drone: !!loops.drone, drums: !!drumsTimer,
+               room: !!loops.room, home: !!loops.home };
+    }
+
+    return { ensure: ensure, wind: wind, drone: drone, drums: drums, room: room, tick: tick, duck: duck, home: home,
+             bell: bell, crack: crack, hoe: hoe, heart: heart, page: page,
+             setOn: setOn, isOn: isOn, state: state };
+  })();
+  window.__SFX = SFX;
+
+  /* 尾声：最后一句「急急急。」出现后开始计时，玩家点一下可立即跳 */
+  var epiChoiceTimer = null;
+  function armEpilogueChoice(){
+    if (epiChoiceTimer) clearTimeout(epiChoiceTimer);
+    SFX.drums(false); SFX.wind(true); SFX.duck(true);
+    epiChoiceTimer = setTimeout(function(){
+      epiChoiceTimer = null;
+      letterChoice();
+    }, 4200);
+  }
+  function skipEpilogueChoice(){
+    if (!epiChoiceTimer) return false;
+    clearTimeout(epiChoiceTimer);
+    epiChoiceTimer = null;
+    SFX.duck(false); SFX.wind(false); SFX.drums(true);
+    letterChoice();
+    return true;
+  }
+
+  /* ══════════ 黑夫家书配音（同一个音色，一句一条，点了才念） ══════════ */
+  var LETTER_VOICE = [
+    '素材/voice/heifu/01.mp3','素材/voice/heifu/02.mp3','素材/voice/heifu/03.mp3',
+    '素材/voice/heifu/04.mp3','素材/voice/heifu/05.mp3','素材/voice/heifu/06.mp3'
+  ];
+  var letterAudio = null;
+  function stopLetterVoice(){
+    if (letterAudio){
+      try { letterAudio.pause(); } catch(e){}
+      letterAudio = null;
+    }
+  }
+  function playLetterVoice(i){
+    stopLetterVoice();
+    if (!SFX.isOn()) return;                 /* 音效关掉 → 配音也静音 */
+    if (i == null || !LETTER_VOICE[i]) return;
+    try {
+      letterAudio = new Audio(LETTER_VOICE[i]);
+      letterAudio.volume = 0.92;
+      var pr = letterAudio.play();
+      if (pr && pr.catch) pr.catch(function(){});
+    } catch(e){}
+  }
+
+  /* 脚步：低频闷响 ×3，不用音频文件 */
+  function footstep(){
+    try{
+      var AC = window.AudioContext || window.webkitAudioContext;
+      if (!AC) return;
+      var ctx = new AC();
+      for (var i = 0; i < 3; i++){
+        var t0 = ctx.currentTime + i * 0.55;
+        var o = ctx.createOscillator(), g = ctx.createGain();
+        o.type = 'sine';
+        o.frequency.setValueAtTime(110, t0);
+        o.frequency.exponentialRampToValueAtTime(42, t0 + 0.14);
+        g.gain.setValueAtTime(0.0001, t0);
+        g.gain.exponentialRampToValueAtTime(0.28, t0 + 0.012);
+        g.gain.exponentialRampToValueAtTime(0.0001, t0 + 0.20);
+        o.connect(g); g.connect(ctx.destination);
+        o.start(t0); o.stop(t0 + 0.22);
+      }
+      setTimeout(function(){ try{ ctx.close(); }catch(e){} }, 3000);
+    }catch(e){}
+  }
+
+  /* ══════════════ 固定演出：居中字幕（无对话框） ══════════════ */
+  var CINE = { timer: null };
+  var cineAudio = null;
+  function stopCineAudio(){
+    if (cineAudio){ try{ cineAudio.pause(); }catch(e){} cineAudio = null; }
+  }
+  function playCineAudio(path){
+    stopCineAudio();
+    if (!path || !SFX.isOn()) return;
+    try {
+      cineAudio = new Audio(path);
+      cineAudio.volume = 0.95;
+      var pr = cineAudio.play();
+      if (pr && pr.catch) pr.catch(function(){});
+    } catch(e){}
+  }
+  var TAP_HINT_SHOWN = false;
+  function showTapHint(){
+    var h = $('tapHint');
+    if (h) { h.classList.add('on'); TAP_HINT_SHOWN = true; }
+  }
+  function hideTapHint(){
+    var h = $('tapHint');
+    if (h) h.classList.remove('on');
+  }
+  /* 第一次点击 / 触摸 / 按键，都收掉提醒 */
+  function dismissTapHint(){
+    if (!TAP_HINT_SHOWN) return;
+    TAP_HINT_SHOWN = false;
+    hideTapHint();
+  }
+  document.addEventListener('pointerdown', dismissTapHint, { passive: true });
+  document.addEventListener('click', dismissTapHint, { passive: true });
+  document.addEventListener('keydown', dismissTapHint, { passive: true });
+
+  function cineMode(on){
+    var app = $('app');
+    if (app) app.classList.toggle('cine-mode', !!on);
+  }
+  /* 左侧半屏浮字：隐藏对话框，只让字浮出来（商鞅回头时用） */
+  function sideCine(lines, cb){
+    panelShow(false);
+    setDialog(false);
+    $('dock').classList.add('hide');
+    var el = $('side'), T = $('sideT'), G = $('sideG');
+    el.classList.add('on');
+    T.classList.remove('show'); G.classList.remove('show');
+    var i = 0;
+    (function step(){
+      if (i >= lines.length){
+        T.classList.remove('show'); G.classList.remove('show');
+        setTimeout(function(){ el.classList.remove('on'); if (cb) cb(); }, 800);
+        return;
+      }
+      var ln = lines[i++];
+      T.classList.remove('show'); G.classList.remove('show');
+      setTimeout(function(){
+        T.textContent = ln.t || '';
+        G.textContent = ln.g || '';
+        if (ln.audio) playCineAudio(ln.audio);
+        requestAnimationFrame(function(){
+          T.classList.add('show');
+          if (ln.g) G.classList.add('show');
+        });
+        setTimeout(step, ln.hold || 2600);
+      }, 320);
+    })();
+  }
+
+  function chapterCard(t, sub, cb){
+    var el = $('chap');
+    $('chapT').textContent = t || '';
+    $('chapS').textContent = sub || '';
+    el.classList.add('on');
+    cineMode(true);
+    setTimeout(function(){
+      el.classList.remove('on');
+      setTimeout(function(){ cineMode(false); if (cb) cb(); }, 900);
+    }, 2800);
+  }
+  function cineHide(){
+    stopCineAudio();
+    clearTimeout(CINE.timer); CINE.timer = null;
+    $('cine').classList.remove('on');
+    var b = $('cineBtns'); b.classList.remove('on'); b.innerHTML = '';
+    cineMode(false);
+  }
+  var CINE_STEP = null;
+  /* 点击字幕 → 立刻跳下一句 */
+  document.addEventListener('click', function(e){
+    if (!document.getElementById('cine').classList.contains('on')) return;
+    if (e.target.closest && e.target.closest('#cineBtns')) return;
+    if (CINE_STEP) { clearTimeout(CINE.timer); CINE_STEP(); }
+  });
+
+  var CINE = { timer: null, inner: null, gen: 0 };
+
+  function cineClear(){
+    clearTimeout(CINE.timer); clearTimeout(CINE.inner);
+    CINE.timer = null; CINE.inner = null;
+    stopCineAudio();
+  }
+
+  function cine(lines, cb, opts){
+    cineMode(true);
+    panelShow(false);
+    cineClear();
+    setDialog(false);
+    $('dock').classList.add('hide');
+    var gen = ++CINE.gen;                 /* 代号：旧链子的回调一律作废 */
+    var T = $('cineT'), G = $('cineG'), B = $('cineBtns');
+    $('cine').classList.add('on');
+    B.classList.remove('on');
+    B.innerHTML = '';
+    var i = 0;
+
+    CINE_STEP = function(){
+      if (gen !== CINE.gen) return;       /* 已经是旧链子，忽略 */
+      cineClear();
+      step();
+    };
+
+    function step(){
+      if (gen !== CINE.gen) return;
+      if (i >= lines.length){
+        CINE_STEP = null;
+        cineHide();
+        if (cb) cb();
+        return;
+      }
+      var ln = lines[i++];
+      T.classList.remove('show'); G.classList.remove('show');
+      CINE.inner = setTimeout(function(){
+        if (gen !== CINE.gen) return;
+        T.textContent = ln.t || '';
+        G.textContent = ln.g || '';
+        if (ln.audio) playCineAudio(ln.audio);
+        requestAnimationFrame(function(){
+          T.classList.add('show');
+          if (ln.g) G.classList.add('show');
+        });
+        if ((opts && opts.manual) || CINE.manual) {
+          /* 手动模式：不自动走，等玩家点 */
+        } else {
+          CINE.timer = setTimeout(step, ln.hold || (ln.g ? 3800 : 2600));
+        }
+      }, 360);
+    }
+
+    step();
+  }
+
+  function cineChoice(prompt, options, cb){
+    CINE.gen++; cineClear();
+    panelShow(false);
+    clearTimeout(CINE.timer);
+    setDialog(false);
+    $('dock').classList.add('hide');
+    $('cine').classList.add('on');
+    var T = $('cineT'), G = $('cineG'), B = $('cineBtns');
+    T.classList.remove('show'); G.classList.remove('show');
+    B.innerHTML = '';
+    T.textContent = prompt || '';
+    G.textContent = '';
+    requestAnimationFrame(function(){ T.classList.add('show'); });
+    var chosen = false;
+    options.forEach(function(o, idx){
+      var b = document.createElement('button');
+      b.textContent = (typeof o === 'string') ? o : o.label;
+      b.onclick = function(){
+        if (chosen) return;          /* 防重复点击：只认第一次 */
+        chosen = true;
+        B.innerHTML = '';
+        cineHide();
+        cb(idx);
+      };
+      B.appendChild(b);
+    });
+    B.classList.add('on');
+  }
+  function fadeTo(cb){ $('fade').classList.add('on'); setTimeout(cb, 900); }
+  function fadeFrom(){ setTimeout(function(){ $('fade').classList.remove('on'); }, 80); }
+
+  /* 黑场字幕 */
+  function runPrologue(lines, cb){
+    cineMode(true);
+    var ov = $('prologue'), box = $('plines');
+    box.innerHTML = '';
+    ov.classList.remove('out');
+    ov.classList.add('on');
+    var i = 0, timer = null, PRO_STEP = null, done = false;
+
+    function finish(){
+      if (done) return;
+      done = true;
+      ov.classList.add('out');
+      setTimeout(function(){ ov.classList.remove('on','out'); cineMode(false); cb(); }, 700);
+    }
+
+    /* 点击黑场 → 直接跳过整段 */
+    function onClick(e){
+      if (done) return;
+      clearTimeout(timer);
+      PRO_STEP = null;
+      ov.removeEventListener('click', onClick);
+      finish();
+    }
+    ov.addEventListener('click', onClick);
+
+    (function step(){
+      if (done) return;
+      if (i >= lines.length){
+        timer = setTimeout(function(){
+          ov.removeEventListener('click', onClick);
+          finish();
+        }, 700);
+        return;
+      }
+      var d = document.createElement('div');
+      d.className = 'pline';
+      d.textContent = lines[i];
+      box.appendChild(d);
+      requestAnimationFrame(function(){ d.classList.add('show'); });
+      i++;
+      timer = setTimeout(step, 850);
+    })();
+  }
+
+  function startGame(){
+    histReset();
+    setDialog(false);
+    setPlayer(false);
+    $('dock').classList.add('hide');
+    $('start').classList.add('gone');
+    S.scene = 'prologue';
+    SFX.home(false);
+    SFX.ensure(); SFX.wind(true);
+    showTapHint();
+    runPrologue(['公元前 356 年', '秦国 · 栎阳城外'], function(){
+      /* 序 · 村口（固定演出，不用对话框） */
+      CINE.manual = true;              /* 这一段：不自动播，等玩家点 */
+      setBg('village');
+      setTimeout(function(){
+        cine([
+          { t:'令民为什伍，而相牧司连坐。', g:'把百姓按五家一伍、十家一什编起来，互相监督，一家有罪，同伍连坐。', hold:4200, audio:'素材/voice/prologue3/01.mp3' },
+          { t:'不告奸者腰斩；告奸者与斩敌首同赏。', g:'知情不报的，腰斩；告发的，和斩下敌人首级一样受赏。', hold:4200, audio:'素材/voice/prologue3/02.mp3' },
+          { t:'某里，户人——', g:'官吏的声音压得很低。他转过头，目光越过人群。', hold:5600, audio:'素材/voice/prologue3/03.mp3' }
+        ], function(){
+          CINE.manual = false;
+          cineChoice('人群里，一个三十上下的男人往后退了半步。', [
+            { label:'A　出声：「他在这儿。」' },
+            { label:'B　上前一步，挡在他前面' }
+          ], function(idx){
+            S.pre = (idx === 0) ? 'reported' : 'hidden';
+            fadeTo(toCourtOpening);
+          });
+        });
+      }, 1400);
+    });
+  }
+
+  /* 朝堂开场：商鞅三句是固定演出，居中字幕，不弹对话框 */
+  function toCourtOpening(){
+    S.scene = 'court';
+    histReset();
+    setBg('court');
+    setPlayer(true);
+    SFX.wind(false);
+    SFX.room(true);
+    setTimeout(function(){ SFX.bell(); }, 900);
+    footstep();
+    fadeFrom();
+    /* 开场先空着画面——商鞅的回头图只属于"辩不过他"那一段 */
+    setActors(null, null);
+    setTimeout(function(){
+      cine([
+        { t:'数日前 · 栎阳 · 殿上', g:'', hold:2000 }
+      ], function(){
+        setPlayer(false);
+        setActors('商鞅右', '甘龙');
+        setTimeout(function(){ SFX.crack(); }, 120);
+        setTimeout(function(){
+          cine([
+            { t:L.shangyang_open[0][0], g:L.shangyang_open[0][1], hold:5600 },
+            { t:L.shangyang_open[1][0], g:L.shangyang_open[1][1], hold:3800 }
+          ], function(){
+            /* 固定演出结束：商鞅退到一旁，左槽换回"你"，甘龙开口 */
+            setDialog(true);
+            setActors(null, '甘龙');
+            setPlayer(true);
+            push('npc', L.gandong_open[0][0], L.gandong_open[0][1], '甘龙');
+            setTimeout(function(){ $('dock').classList.remove('hide'); sayEl.focus(); }, 60);
+            renderDbg();
+          });
+        }, 1000);
+      });
+    }, 1600);
+  }
+
+  /* ══════════════ 场景：朝堂 ══════════════ */
+  async function courtTurn(text){
+    const c = S.court;
+    const r = classify(text);
+    push('player', text);
+    let delta = DELTA.court[r.cat] || 0;
+    if (r.v === '失言') delta = +10;
+    c.stance = Math.max(0, Math.min(110, c.stance + delta));
+    c.round++;
+
+    const bank = L.court[r.v] || L.court['未击中'];
+    const fb = pick(bank, c.round - 1);
+    const pair = await aiReply('甘龙', text, fb);
+    endThinking();
+    const line = pair[0], gloss = pair[1];
+    push('npc', line, gloss);
+
+    logTurn({ round: c.round, input: text, verdict: r.v, cat: r.cat, delta, stance: c.stance, line, ai: AI.on });
+
+    if (c.round >= 3 && !c.checked) { c.checked = true; courtCheck(); return; }
+    if (c.round >= 6) { forceSilent(); return; }
+  }
+
+  function courtCheck(){
+    const c = S.court;
+    const persuasion = 100 - c.stance;
+    if (persuasion >= 60) {
+      push('npc', '……老臣无以为对。', '……老臣没什么可对的了。');
+      setTimeout(gandongFalls, 600);
+    } else {
+      sys('殿内静。所有人都在等你开口。');
+      showOpts([
+        { label:'① 「三代不同道而王，五霸不同法而霸。」', text:'三代不同道而王，五霸不同法而霸。' },
+        { label:'② 「秦地广而人寡，法旧而兵弱。」',       text:'秦地广而人寡，法旧而兵弱，不变则无以强。' },
+        { label:'③ 「请先试一县，三年为期。」',           text:'请先试一县，三年为期，成则推之，不成则复其旧。' },
+        { label:'④ 沉默', silent:true, text:'' }
+      ]);
+      // 沉默选项特殊处理
+      const btns = optsEl.querySelectorAll('button');
+      btns[3].onclick = () => { clearOpts(); silenceBranch(); };
+    }
+  }
+
+  function gandongFalls(){
+    push('npc', '君无疑矣。', '国君不必再疑虑了。');
+    const last = scrollEl.lastElementChild;
+    if (last) last.querySelector('.who').textContent = '商鞅';
+    afterDialogue(function(){ chapterCard('君 心 难 测', '', toKing); });
+  }
+
+  function forceSilent(){
+    sys('六轮已过。殿上无人再替你说话。');
+    setTimeout(silenceBranch, 700);
+  }
+
+  function silenceBranch(){
+    S.court.silent = true;   /* 不再覆盖序章抉择 */
+    /* 商鞅站到右侧，回头看你；对话框隐去，左侧浮字 */
+    setActors(null, '商鞅');
+    sideCine([{ t:'子退。吾自言之。', g:'你退下，我自己来说。', hold:4200 }], function(){
+      /* 说完，他转回去面对甘龙 */
+      setActors('商鞅右', '甘龙');
+      beginDialogue();
+      silenceRun();
+    });
+  }
+  function silenceRun(){
+    S.court.silent = true;
+    sys('殿上静得能听见呼吸。');
+    /* 商鞅的台词必须显式挂"商鞅"，否则会按场景默认挂成甘龙 */
+    L.silent_branch.forEach(([t,g]) => push('npc', t, g, '商鞅'));
+    push('npc', '……', null, '甘龙');
+    push('npc', '君若行之，老臣请观其成。', '国君要是真做，老臣就看着它成不成。', '甘龙');
+    sys('这一场，不是你说赢的。');
+    afterDialogue(function(){ chapterCard('君 心 难 测', '', toKing); });
+  }
+
+  /* ══════════════ 场景：君心 ══════════════ */
+  function toKing(){
+    beginDialogue();
+    histReset();
+    S.scene = 'king';
+    SFX.ensure(); SFX.room(true); SFX.drone(true);
+    setPlayer(true);
+    setBg('hall');
+    var lb = $('lightbeam'); if (lb) lb.classList.add('on');
+    setActors(null, '孝公');
+    L.king_open.forEach(([t,g]) => push('npc', t, g));
+    const d = scrollEl.lastElementChild;
+    if (d) d.querySelector('.who').textContent = '孝公';
+    sayEl.focus(); renderDbg();
+    if (S.court.silent) {
+      sys('孝公的目光越过你。');
+      SFX.heart();
+      push('npc', '商君，若败了呢？', '商鞅，要是败了呢？');
+      const x = scrollEl.lastElementChild;
+      if (x) x.querySelector('.who').textContent = '孝公';
+    }
+  }
+
+  async function kingTurn(text){
+    const k = S.king;
+    const r = classify(text);
+    push('player', text);
+    let delta = DELTA.king[r.cat] || 0;
+    if (r.v === '失言') delta = -5;
+    if (S.court.silent) delta = Math.round(delta / 2);
+    k.resolve = Math.max(0, Math.min(100, k.resolve + delta));
+    k.round++;
+
+    const bank = L.king[r.v] || L.king['未击中'];
+    const fb = pick(bank, k.round - 1);
+    const pair = await aiReply('孝公', text, fb);
+    endThinking();
+    const line = pair[0], gloss = pair[1];
+    push('npc', line, gloss);
+
+    logTurn({ round: k.round, input: text, verdict: r.v, cat: r.cat, delta, resolve: k.resolve, line, ai: AI.on });
+
+    if (k.resolve >= 80) { kingPass(); return; }
+    if (k.round >= 2 && !k.checked) {
+      k.checked = true;
+      if (k.resolve < 50) {
+        showOpts([
+          { label:'① 「臣任之。」', text:'臣任之。' },
+          { label:'② 「三年为期，若不成，复其旧。」', text:'三年为期。若不成，复其旧法。' },
+          { label:'③ 「疑事无功，疑行无名。」', text:'疑事无功，疑行无名。' }
+        ]);
+      }
+    }
+    if (k.round >= 5) kingPass();
+  }
+
+  function kingPass(){
+    SFX.drone(false);
+    setActors(null, '孝公决断');
+    lock(true); clearOpts();
+    L.king_final.forEach(([t,g]) => push('npc', t, g));
+    const nodes = scrollEl.querySelectorAll('.msg.npc');
+    for (let i = nodes.length - 2; i < nodes.length; i++) {
+      if (nodes[i]) nodes[i].querySelector('.who').textContent = '孝公';
+    }
+    sys('于是遂出垦草令。');
+    afterDialogue(function(){ chapterCard('数 日 后', '法令已行 · 栎阳城外', toVillage); });
+  }
+
+  /* ══════════════ 场景：回村 ══════════════ */
+  function toVillage(){
+    SFX.ensure(); SFX.drone(false); SFX.room(false); SFX.wind(true);
+    resetDialogue(true);
+    histReset();
+    S.scene = 'village';
+    setPlayer(false);
+    lock(false);
+    sayEl.value = '';
+
+    /* 第一拍：回到村口，只有一句话，没有邻人 */
+    setActors(null, null);
+    setBg('village');
+    cine([{ t:'数日后 · 又回到栎阳城外', g:'', hold:2600 }], function(){
+      /* 第二拍：黑屏 → 田埂 → 邻人出现 */
+      fadeTo(function(){
+        setBg('field');
+        setActors(null, '邻人');
+        beginDialogue();
+        /* 把他和开幕那天的选择扣上 */
+        sys('田埂上蹲着一个人。你认得他——那天在人群里，往后退了半步的那个。');
+        push('npc', L.village[0][0], null, '邻人');
+        push('npc', L.village[1][0], null, '邻人');
+        fadeFrom();
+        sayEl.focus(); renderDbg();
+
+        /* 第三拍：他说完「我家的地，还归我吗」，先静三秒 */
+        afterDialogue(function(){
+          $('dock').classList.add('hide');
+          lock(true);
+          SFX.duck(true);
+          setTimeout(function(){
+            SFX.duck(false);
+            villageChoice();
+          }, 3000);
+        });
+      });
+    });
+  }
+
+  /* 回村：三选一（都不"对"，但后果不同） */
+  function villageChoice(){
+    lock(true);
+    showOpts([
+      { label:'① 蹲下来，看那块亩籍' },
+      { label:'② 站着，说「这是国法」' },
+      { label:'③ 说「我不知道」' }
+    ]);
+    var bs = optsEl.querySelectorAll('button');
+    if (bs[0]) bs[0].onclick = function(){ pickVillage('look'); };
+    if (bs[1]) bs[1].onclick = function(){ pickVillage('law'); };
+    if (bs[2]) bs[2].onclick = function(){ pickVillage('dunno'); };
+  }
+
+  function pickVillage(kind){
+    clearOpts();
+    lock(false);
+    beginDialogue();
+    S.village.choice = kind;
+    if (S.village.round < 1) S.village.round = 1;   /* 这一选算一轮 */
+    if (kind === 'look'){
+      push('npc', '……', null, '邻人');
+      push('npc', '这上面，是我爹的名字。', '这木牌上写的，是我爹的名字。', '邻人');
+      push('npc', '量到那边，算谁的？', '地量到那边，算谁的？', '邻人');
+    } else if (kind === 'law'){
+      push('npc', '……', null, '邻人');
+      push('npc', '大人说得对。', '大人说得对。', '邻人');
+      sys('他把脸转开了。');
+    } else {
+      push('npc', '……', null, '邻人');
+      push('npc', '我知道。', '我知道。', '邻人');
+      push('npc', '我就是想问一句。', '我就是想问一句。', '邻人');
+    }
+    sayEl.focus(); renderDbg();
+  }
+
+  async function villageTurn(text){
+    const v = S.village;
+    if (Math.random() < 0.45) SFX.hoe();
+    push('player', text);
+    v.round++;
+
+    // 问名字
+    if (!v.askedName && /(名字|叫|谁|名)/.test(text)) {
+      v.askedName = true;
+      push('npc', L.name_reply[0][0], null);
+      const d = scrollEl.lastElementChild; if (d) d.querySelector('.who').textContent = '邻人';
+      logTurn({ round: v.round, input: text, event:'askName' });
+      if (v.round >= 2) return endVillage();
+      return;
+    }
+
+    const bank = L.village_round[Math.min(v.round, 3)] || L.village_round[3];
+    const fb = pick(bank, v.round - 1);
+    const pair = await aiReply('邻人', text, fb);
+    endThinking();
+    push('npc', pair[0], null);
+    logTurn({ round: v.round, input: text, event:'talk' });
+
+    if (v.round >= 2) return endVillage();
+  }
+
+  function endVillage(){
+    if (S.village.done) return;
+    S.village.done = true;
+    lock(true); clearOpts();
+
+    // 分支兑现
+    if (S.court.silent) {
+      sys('他抬起头，第一次直视你。');
+      push('npc', '大人。新法说，五家为伍，一家有罪，五家连坐。', null, '邻人');
+      push('npc', '大人……这法是好事吗？', null, '邻人');
+    } else if (S.pre === 'hidden') {
+      push('npc', '他们查了伍里的名册。', null, '邻人');
+      push('npc', '查了三遍。', null, '邻人');
+      push('npc', '查不着，就算了。', null, '邻人');
+      push('npc', '可我知道，迟早要查到。', null, '邻人');
+      push('npc', '名册上，五家是一个名字。', null, '邻人');
+    } else {
+      push('npc', '大人。那天……是你说的吧。', null, '邻人');
+      push('npc', '我不怨你。', null, '邻人');
+      push('npc', '里典来问过话了。说等上头批。', null, '邻人');
+      push('npc', '按令，不告奸的——腰斩。', null, '邻人');
+      push('npc', '批下来，这地就不是我的了。', null, '邻人');
+    }
+    afterDialogue(function(){ chapterCard('一 百 三 十 一 年 后', '公元前 225 年 · 淮阳前线', toEpilogue); });
+  }
+
+  /* ══════════════ 尾声 ══════════════ */
+  function toEpilogue(){
+    S.scene = 'epilogue';
+    SFX.wind(false); SFX.room(false); SFX.drums(true);
+    setPlayer(false);
+    setActors(null, null);
+    scrollEl.innerHTML = '';
+    lock(true);
+    setBg('battle');
+    cine([
+      { t:'距那场朝堂论战，已过一百三十一年', hold:5600 },
+      { t:'黑夫，秦军士兵', g:'家里有母亲，有哥哥衷。他在等一件夏衣。', hold:5600 }
+    ], function(){
+      var probe = new Image();
+      probe.onload = function(){ setActors(null, '黑夫'); };
+      probe.src = '素材/heifu.png';
+      setBg('slips');
+      setTimeout(function(){
+        resetDialogue(true);
+        L.letter.forEach(([t,g], i) => setTimeout(function(){ SFX.page(); push('npc', t, g, '黑夫', i); }, 700 + i * 1600));
+        var total = 700 + L.letter.length * 1600;
+        /* 静默与选项由「最后一句出现」触发，不再在点击后空等 */
+      }, 1000);
+    });
+  }
+
+  /* 家书读完后：五秒什么都没有，只有风 */
+  function epilogueSilence(){          /* 已由 armEpilogueChoice 取代，保留兜底 */
+    resetDialogue(true);
+    armEpilogueChoice();
+  }
+
+  /* 你要回信吗 */
+  function letterChoice(){
+    stopLetterVoice();
+    SFX.duck(false); SFX.wind(false); SFX.drums(true);
+    beginDialogue();
+    lock(true);
+    showOpts([
+      { label:'① 不回' },
+      { label:'② 回一句「家里都好」' },
+      { label:'③ 回一句「夏衣已寄」' }
+    ]);
+    var bs = optsEl.querySelectorAll('button');
+    if (bs[0]) bs[0].onclick = function(){ epilogueEnd('none'); };
+    if (bs[1]) bs[1].onclick = function(){ epilogueEnd('ok'); };
+    if (bs[2]) bs[2].onclick = function(){ epilogueEnd('coat'); };
+  }
+
+  function epilogueEnd(kind){
+    clearOpts();
+    lock(true);
+    beginDialogue();
+    sys('信发出去了。');
+    if (kind === 'none')        sys('你没有回信。');
+    else if (kind === 'ok')     sys('可那一批家书，没有一封送到。');
+    else                        sys('那一车夏衣，走的是另一条路。');
+    afterDialogue(showLetterNote);      /* 读完结局 → 说明卡 → 再次入卷 */
+  }
+
+  /* 说明卡：点一下进结局页 */
+  function showLetterNote(){
+    stopLetterVoice();
+    resetDialogue(true);
+    var n = $('letterNote');
+    if (!n) { endGame(); return; }
+    n.classList.add('on');
+    var go = function(){
+      n.classList.remove('on');
+      n.removeEventListener('pointerdown', go);
+      endGame();
+    };
+    n.addEventListener('pointerdown', go);
+  }
+
+  function endGame(){
+    stopLetterVoice();
+    resetDialogue(true);
+    SFX.drums(false); SFX.wind(false); SFX.drone(false); SFX.room(false);
+    $('endT').textContent = '治 世 不 一 道';
+    $('endS').textContent = '—— 完 ——';
+    $('endbox').classList.add('on');
+  }
+
+  /* ══════════════ 输入 ══════════════ */
+  function say(text, fromOpt){
+    text = (text === undefined ? sayEl.value : text).trim();
+    if (!text) return;
+    /* 玩家一说话，立刻播完当前的，再排玩家的话 */
+    clearInterval(typer); typing = false; curItem = null; Q = [];
+    if (!text) return;
+    sayEl.value = '';
+    if (!fromOpt) clearOpts();
+
+    if (S.scene === 'court') courtTurn(text);
+    else if (S.scene === 'king') kingTurn(text);
+    else if (S.scene === 'village') villageTurn(text);
+  }
+
+  $('dialogPanel').addEventListener('click', function(e){
+    if (e.target.closest('#dock') || e.target.closest('button')) return;
+    advance();
+  });
+  document.addEventListener('keydown', function(e){
+    if (document.activeElement === sayEl) return;
+    if (e.key === ' ' || e.key === 'Enter') { e.preventDefault(); advance(); }
+  });
+
+  $('send').onclick = () => say();
+  sayEl.addEventListener('keydown', e => {
+    if (e.isComposing || e.keyCode === 229) return;
+    if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); say(); }
+  });
+
+  /* ══════════════ 调试面板 ══════════════ */
+  function renderDbg(){
+    const kv = [
+      ['scene', S.scene],
+      ['序章', S.pre || '—'], ['朝堂沉默', S.court.silent ? '是' : '否'],
+      ['stance', S.court.stance],
+      ['说服度', (100 - S.court.stance) + '%'],
+      ['court.round', S.court.round],
+      ['resolve', S.king.resolve],
+      ['king.round', S.king.round],
+      ['village.round', S.village.round]
+    ];
+    $('dbgkv').innerHTML = kv.map(([k,v]) =>
+      '<div class="kv"><span>' + k + '</span><b>' + v + '</b></div>').join('');
+    $('dbglog').textContent = S.log.map(o =>
+      'R' + (o.round||'-') + ' [' + (o.verdict||o.event) + '] ' +
+      (o.cat||'') + ' Δ' + (o.delta||0) + ' → ' + (o.stance!==undefined?('st='+o.stance):('rs='+o.resolve)) +
+      '\n  ' + (o.input||'') + '\n  «' + (o.line||'') + '»'
+    ).join('\n\n');
+  }
+  if ($('btnDbg')) $('btnDbg').onclick = () => $('dbg').classList.toggle('on');
+  $('btnDbgClose').onclick = () => $('dbg').classList.remove('on');
+  $('btnExport').onclick = () => {
+    const blob = new Blob([JSON.stringify({ court:S.court, king:S.king, pre:S.pre, log:S.log }, null, 2)],
+      { type:'application/json' });
+    const a = document.createElement('a');
+    a.href = URL.createObjectURL(blob);
+    a.download = '测试记录-' + Date.now() + '.json';
+    a.click();
+  };
+  if ($('btnAuto')) $('btnAuto').onclick = function(){
+    autoMode = !autoMode;
+    this.classList.toggle('on', autoMode);
+    if (autoMode && !typing) advance();
+  };
+  $('btnLog').onclick = function(){
+    $('dbg').classList.toggle('on');
+  };
+
+  $('btnSfx').onclick = function(){
+    SFX.setOn(!SFX.isOn());
+    this.textContent = '音效：' + (SFX.isOn() ? '开' : '关');
+  };
+  (function(){
+    try {
+      if (localStorage.getItem('zsybd_sfx') === '0') SFX.setOn(false);
+    } catch(e){}
+    var b = $('btnSfx');
+    if (b) b.textContent = '音效：' + (SFX.isOn() ? '开' : '关');
+    /* 浏览器要求用户手势后才能出声：每次点击都尝试恢复（已恢复就无副作用） */
+    var unlock = function(){
+      SFX.ensure();
+      /* 如果还在首页，就起"烛下案头"的环境音 */
+      var h = document.getElementById('hs-home');
+      if (h && getComputedStyle(h).display !== 'none') SFX.home(true);
+    };
+    document.addEventListener('pointerdown', unlock, { passive: true });
+    document.addEventListener('touchstart', unlock, { passive: true });
+    document.addEventListener('keydown', unlock, { passive: true });
+  })();
+
+  $('btnGloss').onclick = function(){
+    S.glossOn = !S.glossOn;
+    this.textContent = '白话注：' + (S.glossOn ? '开' : '关');
+    scrollEl.querySelectorAll('.gloss').forEach(e => e.style.display = S.glossOn ? '' : 'none');
+    var g = $('dgloss');
+    if (g) {
+      if (!S.glossOn) { g.dataset.keep = g.textContent; g.textContent = ''; }
+      else if (g.dataset.keep) { g.textContent = g.dataset.keep; }
+    }
+  };
+
+  $('btnStart').onclick = startGame;
+  $('btnAgain').onclick = function(){
+    /* 清掉 #epilogue 之类调试入口，否则重载后又回到同一幕 */
+    try { history.replaceState(null, '', location.pathname + location.search); } catch(e){}
+    location.href = location.pathname + location.search;
+  };
+
+  // 演示模式：#demo 自动开局
+  function devEnter(fn){
+    var h = document.getElementById('hs-home');
+    if (h) h.style.display = 'none';
+    fn();
+  }
+  if (location.hash === '#demo') { setTimeout(function(){ devEnter(startGame); }, 200); }
+  if (location.hash === '#v-hidden') { setTimeout(function(){ devEnter(function(){ $('start').classList.add('gone'); S.pre='hidden'; toVillage(); }); }, 300); }
+  if (location.hash === '#v-reported') { setTimeout(function(){ devEnter(function(){ $('start').classList.add('gone'); S.pre='reported'; toVillage(); }); }, 300); }
+  if (location.hash === '#silence') { setTimeout(function(){
+    document.getElementById('hs-home').style.display = 'none';
+    $('start').classList.add('gone');
+    S.scene = 'court'; setBg('court'); setPlayer(false);
+    silenceBranch();
+  }, 400); }
+  if (location.hash === '#king') { setTimeout(function(){ devEnter(function(){ $('start').classList.add('gone'); toKing(); }); }, 200); }
+  if (location.hash === '#village') { setTimeout(function(){ devEnter(function(){ $('start').classList.add('gone'); toVillage(); }); }, 200); }
+  if (location.hash === '#epilogue') { setTimeout(function(){ devEnter(function(){ $('start').classList.add('gone'); S.pre='reported'; toEpilogue(); }); }, 300); }
+  /* 自检用：自动选 A，跑到朝堂 */
+  if (location.hash === '#demoauto') {
+    setTimeout(function(){
+      startGame();
+      var t = setInterval(function(){
+        var b = document.querySelector('#cineBtns button');
+        if (b) { clearInterval(t); b.click(); }
+      }, 400);
+    }, 200);
+  }
+  /* 素材自检：缺图时给明确提示 */
+  (function checkAssets(){
+    var probe = new Image();
+    probe.onerror = function(){
+      var d = document.createElement('div');
+      d.style.cssText = 'position:fixed;left:50%;top:14px;transform:translateX(-50%);z-index:999;' +
+        'background:#2a1212;border:1px solid #6a2f2f;color:#e0b0b0;padding:10px 18px;border-radius:6px;' +
+        'font:13px/1.6 sans-serif;text-align:center;max-width:80vw';
+      d.innerHTML = '⚠ 找不到「素材」文件夹<br><span style="font-size:11.5px;color:#a08080">' +
+        '请确认 素材/ 与 HTML 在同一个文件夹里（不要直接打开 zip 内的文件）</span>';
+      document.body.appendChild(d);
+    };
+    probe.src = '素材/court-main.png';
+  })();
+
+  window.startGame = startGame;
+  console.log('[治世不一道] build 1018-1710');
+  aiProbe();
+  loadPlayer();
+})();
+</script>
+
+<script>
+
+(function(){
+  var TITLES = ['治世不一道'];
+  var titleEl = document.getElementById('hs-title');
+  var saved = null; try { saved = localStorage.getItem('title_idx'); } catch(e){}
+  var idx = saved ? parseInt(saved,10) : 0;
+  if (isNaN(idx) || idx < 0 || idx >= TITLES.length) idx = 0;
+  function renderTitle(){
+    titleEl.textContent = TITLES[idx];
+    var box = document.getElementById('hs-tsw'); box.innerHTML = '';
+    TITLES.forEach(function(t,i){
+      var b = document.createElement('button');
+      b.textContent = (i+1)+' '+t;
+      if (i===idx) b.className='on';
+      b.onclick=function(){ idx=i; try{localStorage.setItem('title_idx',String(i))}catch(e){}; renderTitle(); };
+      box.appendChild(b);
+    });
+  }
+  renderTitle();
+
+  // 简册内容：一户一家人（格式照里耶，地名按前 356 秦地调整）
+  var ENTRIES = [
+    ['栎阳 某里', '户人', '不更', '□□'],
+    ['妻', '曰', '□'],
+    ['子', '小上造', '□'],
+    ['子', '小女', '□'],
+    ['伍长', '—', ''],
+    ['', '', '此处待填']
+  ];
+
+  var scroll = document.getElementById('hs-scroll');
+  var slips = [];
+  ENTRIES.forEach(function(e, i){
+    var d = document.createElement('div');
+    d.className = 'slip';
+    var txt = document.createElement('div');
+    txt.className = 'slipTxt';
+    txt.textContent = e.filter(Boolean).join(' ');
+    d.appendChild(txt);
+    var no = document.createElement('div');
+    no.className = 'slipNo';
+    no.textContent = i < ENTRIES.length-1 ? '第 ' + (i+1) + ' 栏' : '';
+    d.appendChild(no);
+    if (i === ENTRIES.length-1) {
+      d.id = 'hs-last';
+      txt.remove();
+      var slot = document.createElement('div');
+      slot.id = 'hs-slot';
+      slot.contentEditable = 'true';
+      slot.spellcheck = false;
+      d.appendChild(slot);
+    }
+    scroll.appendChild(d);
+    slips.push(d);
+  });
+
+  var opened = false;
+  function openScroll(){
+    if (opened) return; opened = true;
+    document.getElementById('hs-unroll').classList.add('gone');
+    scroll.classList.add('open');
+    var edge = document.getElementById('hs-edge'); if (edge) edge.classList.add('gone');
+    placeCords();
+    slips.forEach(function(s,i){ setTimeout(function(){ s.classList.add('show'); }, 260 + i*180); });
+    setTimeout(function(){
+      var tip = document.getElementById('hs-tip');
+      tip.innerHTML = '最后一行是你的。点它，写下名字。';
+    }, 260 + slips.length*180 + 400);
+  }
+  function placeCords(){
+    var c = document.getElementById('hs-cords');
+    if (!c) return;
+    var left = window.innerWidth * 0.08;
+    c.style.left = left + 'px';
+    c.style.width = scroll.scrollWidth + 'px';
+    if (scroll.classList.contains('open')) c.style.opacity = '1';
+  }
+  window.addEventListener('resize', placeCords);
+
+  document.getElementById('hs-unroll').onclick = openScroll;
+  document.addEventListener('wheel', function(e){ if (!opened && e.deltaY > 8) openScroll(); }, {passive:true});
+  // 演示/截图用：地址后加 #open 直接展开
+  if (location.hash === '#open') setTimeout(openScroll, 150);
+
+  var committed = false;
+  function commit(){
+    if (committed) return;
+    var slot = document.getElementById('hs-slot');
+    var name = (slot.textContent||'').replace(/\s/g,'');
+    if (!name) { document.getElementById('hs-tip').textContent = '总得有个名字，才能进这卷册子。'; return; }
+    if (name.length > 6) name = name.slice(0,6);
+    committed = true;
+    slot.textContent = name;
+    slot.contentEditable = 'false';
+    slot.classList.add('written');
+    var last = document.getElementById('hs-last');
+    var no = document.createElement('div');
+    no.className = 'slipNo';
+    no.textContent = '第 ' + ENTRIES.length + ' 栏 · 你';
+    last.appendChild(no);
+    setTimeout(function(){
+      document.getElementById('hs-tip').innerHTML = '前面那些名字，是别人。<b>这一行是你。</b>';
+      var aw = document.getElementById('hs-afterward');
+      if (aw) aw.classList.add('show');
+    }, 700);
+    setTimeout(function(){ document.getElementById('hs-stage').classList.add('gone'); }, 2600);
+    setTimeout(function(){
+      document.getElementById('hs-chapter').classList.add('show');
+      setTimeout(function(){
+        window.PLAYER_NAME = name;                       // 记住玩家名字
+        if (window.__SFX) window.__SFX.home(false);      // 收掉首页环境音
+        var aw2 = document.getElementById('hs-afterward');
+        if (aw2) { aw2.classList.remove('show'); aw2.style.display = 'none'; }
+        var ch2 = document.getElementById('hs-chapter');
+        if (ch2) ch2.classList.remove('show');
+        var h = document.getElementById('hs-home');
+        if (h) h.style.display = 'none';                 // 收起首页
+        if (window.startGame) window.startGame();        // 进游戏（序章·村口）
+      }, 2600);
+    }, 3200);
+  }
+  document.addEventListener('keydown', function(e){
+    var slot = document.getElementById('hs-slot');
+    if (!slot) return;
+    if (document.activeElement !== slot) return;
+    if (e.isComposing) return;
+    if (e.key === 'Enter') { e.preventDefault(); commit(); }
+  });
+  document.addEventListener('click', function(e){
+    var slot = document.getElementById('hs-slot');
+    if (slot && e.target === slot) slot.focus();
+  });
+
+  // 关于
+  var overlay = document.getElementById('hs-overlay');
+  document.getElementById('hs-about').onclick = function(){ overlay.classList.add('show'); };
+  document.getElementById('hs-closeAbout').onclick = function(){ overlay.classList.remove('show'); };
+  overlay.addEventListener('click', function(e){ if (e.target===overlay) overlay.classList.remove('show'); });
+})();
+
+</script>
+</body>
+</html>
